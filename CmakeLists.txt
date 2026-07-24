@@ -5,13 +5,17 @@ project(PBR_Renderer VERSION 1.0.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+find_package(OpenGL REQUIRED)
+
+add_subdirectory(deps/glfw)
+add_subdirectory(deps/glad)
+
 add_executable(PBR_Renderer
     src/main.c
 )
 
-
-#target_link_libraries(PBR_Renderer PRIVATE
-#)
-
-#target_include_directories(PBR_Renderer PRIVATE
-#)
+target_link_libraries(PBR_Renderer PRIVATE
+    glfw
+    glad
+    OpenGL::GL
+)
