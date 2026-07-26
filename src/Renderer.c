@@ -4,11 +4,29 @@
 
 b8 renderer_init(renderer* renderer)
 {
+    renderer->current_window = &renderer->current_window_storage;
+    renderer->current_window->title = "Main window";
+    renderer->current_window->width = 800;
+    renderer->current_window->height = 600;
+    renderer->current_window->parent_window = NULL;
+    renderer->current_window->handle = NULL;
+
+    if (!init_window(renderer->current_window))
+    {
+        LOG_ERROR("Failed to initialize window");
+        return false;
+    }
+
+    if (!_set_target_window(renderer, renderer->current_window))
+    {
+        LOG_ERROR("Failed to set target window");
+        return false;
+    }
+
     int version = gladLoadGL(glfwGetProcAddress);
     if (version == 0)
     {
-        fprintf(stderr, "Failed to initialize GLAD\n");
-        
+        LOG_ERROR("Failed to load OpenGL functions");
         return false;
     }
 
@@ -23,18 +41,31 @@ b8 renderer_init(renderer* renderer)
     return true;
 }
 
-b8 set_target_window(renderer* renderer, window* window)
+b8 _set_target_window(renderer* renderer, window* window)
 {
+    if (!renderer || !window || !window->handle)
+    {
+        return false;
+    }
+
     renderer->current_window = window;
     glfwMakeContextCurrent(renderer->current_window->handle);
 
     return true;
 }
 
-b8 renderer_on_update(renderer* renderer, f32 delta_time)
+void renderer_on_update(renderer* renderer, f32 delta_time)
 {
+    f64 last_time = glfwGetTime();
+
+    show_window(renderer->current_window);
+
     while (!glfwWindowShouldClose(renderer->current_window->handle))
     {
+        f64 current_time = glfwGetTime();
+        delta_time = (f32)(current_time - last_time);
+        last_time = current_time;
+
         int width, height;
         glfwGetFramebufferSize(renderer->current_window->handle, &width, &height);
 

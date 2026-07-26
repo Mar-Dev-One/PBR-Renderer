@@ -14,8 +14,8 @@ b8 init_window(window* wind)
 
 
     GLFWwindow *window = glfwCreateWindow(
-        wind->height,
         wind->width,
+        wind->height,
         wind->title,
         NULL,
         wind->parent_window
@@ -25,10 +25,11 @@ b8 init_window(window* wind)
     {
         fprintf(stderr, "Failed to create GLFW window\n");
         glfwTerminate();
-        return -1;
+        return false;
     }
 
     wind->handle = window;
+    return true;
 }
 
 void show_window(window* window)
