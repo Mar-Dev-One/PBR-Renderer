@@ -12,6 +12,8 @@ add_subdirectory(deps/glad)
 
 add_executable(PBR_Renderer
     src/main.c
+    src/Renderer.c
+    src/Window.c
 )
 
 target_link_libraries(PBR_Renderer PRIVATE

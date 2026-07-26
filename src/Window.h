@@ -1,9 +1,19 @@
 #pragma once
 
-#include "Defines.h"
+#include "Core/Defines.h"
+
+#include <GLFW/glfw3.h>
 
 typedef struct window
 {
-    c8* title;
+    char* title;
+    uint16 width;
+    uint16 height;
+    GLFWwindow *handle;
+    GLFWwindow* parent_window;
 
 } window;
+
+b8 init_window(window* wind);
+void show_window(window* window);
+void destroy_window(window* window);

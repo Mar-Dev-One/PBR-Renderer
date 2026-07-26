@@ -1,76 +1,32 @@
 #include <stdio.h>
 
-#include <glad/gl.h>
-#include <GLFW/glfw3.h>
+#include "Renderer.h"
+#include "Window.h"
 
 int main(void)
 {
-    if (!glfwInit())
-    {
-        fprintf(stderr, "Failed to initialize GLFW\n");
-        return -1;
-    }
+    renderer opengl_renderer;
+    renderer_init(&opengl_renderer);
 
-    // Request an OpenGL 4.6 Core Profile context
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    window main_window = {
+        .title = "Main window",
+        .height = 800,
+        .width = 600,
+        .parent_window = NULL,
+        .handle = NULL
+    };
 
-#ifdef __APPLE__
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-#endif
+    init_window(&main_window);
 
-    GLFWwindow *window = glfwCreateWindow(
-        1280,
-        720,
-        "PBR Renderer",
-        NULL,
-        NULL
-    );
+    set_target_window(&opengl_renderer, &main_window);
 
-    if (!window)
-    {
-        fprintf(stderr, "Failed to create GLFW window\n");
-        glfwTerminate();
-        return -1;
-    }
+    renderer_on_update(&opengl_renderer, 0.0f);
 
-    glfwMakeContextCurrent(window);
+    renderer_destroy(&opengl_renderer);
+    destroy_window(&main_window);
 
-    // Initialize GLAD v2
-    int version = gladLoadGL(glfwGetProcAddress);
-    if (version == 0)
-    {
-        fprintf(stderr, "Failed to initialize GLAD\n");
-        glfwDestroyWindow(window);
-        glfwTerminate();
-        return -1;
-    }
 
-    printf("Loaded OpenGL %d.%d\n",
-           GLAD_VERSION_MAJOR(version),
-           GLAD_VERSION_MINOR(version));
-
-    printf("Vendor   : %s\n", glGetString(GL_VENDOR));
-    printf("Renderer : %s\n", glGetString(GL_RENDERER));
-    printf("Version  : %s\n", glGetString(GL_VERSION));
-
-    while (!glfwWindowShouldClose(window))
-    {
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-
-        glViewport(0, 0, width, height);
-
-        glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
-
-    glfwDestroyWindow(window);
-    glfwTerminate();
+    
 
     return 0;
 }
