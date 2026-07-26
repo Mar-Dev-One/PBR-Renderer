@@ -1,6 +1,10 @@
 #pragma once
 
-#include "stdbool.h"
+#include <assert.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef signed char        int8;
 typedef short              int16;
@@ -16,14 +20,6 @@ typedef float    f32;
 typedef double   f64;
 
 typedef bool     b8;
-
-#pragma once
-
-#include <assert.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 
 
