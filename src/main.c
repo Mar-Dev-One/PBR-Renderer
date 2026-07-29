@@ -4,15 +4,20 @@
 
 int main(void)
 {
-    renderer opengl_renderer = {0};
+    
+    /*
+    
+        renderer opengl_renderer = {0};
 
-    if (!renderer_init(&opengl_renderer))
-    {
-        return -1;
-    }
+        if (!renderer_init(&opengl_renderer))
+        {
+            return -1;
+        }
 
-    renderer_on_update(&opengl_renderer, 0.0f);
-    renderer_destroy(&opengl_renderer);
+        renderer_on_update(&opengl_renderer, 0.0f);
+        renderer_destroy(&opengl_renderer);
+    
+    */
 
 
     
