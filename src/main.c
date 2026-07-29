@@ -1,26 +1,22 @@
 #include <stdio.h>
 
-#include "Renderer.h"
+#include "OpenGL/Renderer.h"
 
 int main(void)
 {
-    
-    /*
-    
-        renderer opengl_renderer = {0};
+    window_descriptor desc = {
+        .title = "Hello OpenGL",
+        .width = 800,
+        .height = 600,
+        .resizable = true,
+        .vsync = false
+    };
 
-        if (!renderer_init(&opengl_renderer))
-        {
-            return -1;
-        }
-
-        renderer_on_update(&opengl_renderer, 0.0f);
-        renderer_destroy(&opengl_renderer);
+    init_renderer(desc);
     
-    */
+    renderer_on_update();
 
-
-    
+    terminate_renderer();
 
     return 0;
 }

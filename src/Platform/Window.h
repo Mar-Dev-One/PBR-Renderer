@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Defines.h"
+#include "../Core/Defines.h"
 
 typedef struct window window;
 
