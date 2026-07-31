@@ -18,6 +18,12 @@ typedef struct window_size {
 } window_size;
 
 
+//TODO : Not expose the GLFW types like GLFWwindow
+typedef struct GLFWwindow GLFWwindow;
+typedef void (*key_callback)(GLFWwindow* window, int key, int scancode, int action, int mods);
+typedef void (*resize_callback)(GLFWwindow* window, int width, int height);
+
+
 window* window_create(window_descriptor desc);
 
 
@@ -25,6 +31,14 @@ void window_poll_events(void);
 void window_swap_buffers(window* wind);
 b8   window_should_close(window* wind);
 void window_close(window* wind);
+
+void window_set_width(window* wind, uint16 width);
+void window_set_width(window* wind, uint16 height);
+
+
+void window_set_key_callback(window* wind, key_callback callback);
+void window_set_resize_callback(window* wind, resize_callback callback);
+
 
 window_size window_get_size(window* wind);
 void window_set_title(window* wind, const char* title);
