@@ -6,7 +6,7 @@
 
 typedef struct renderer *renderer;
 
-b8 init_renderer(window_descriptor init_window_desc);
+b8 init_renderer(window_descriptor* windows_desc, uint8 windows_number);
 
 void renderer_on_update();
 

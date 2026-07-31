@@ -55,6 +55,11 @@ void window_swap_buffers(window* wind)
     glfwSwapBuffers(wind->handle);
 }
 
+void window_make_context_current(window* wind)
+{
+    glfwMakeContextCurrent(wind->handle);
+}
+
 b8 window_should_close(window* wind)
 {
     return glfwWindowShouldClose(wind->handle);
@@ -97,7 +102,10 @@ void window_set_resize_callback(window* wind, resize_callback callback)
     glfwSetFramebufferSizeCallback(wind->handle, callback);
 }
 
-
+void window_set_close_callback(window* wind, close_callback callback)
+{
+    glfwSetWindowCloseCallback(wind->handle, callback);
+}
 
 void window_set_title(window* wind, const char* title)
 {

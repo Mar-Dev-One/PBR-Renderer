@@ -4,15 +4,52 @@
 
 int main(void)
 {
-    window_descriptor desc = {
-        .title = "Hello OpenGL",
-        .width = 800,
-        .height = 600,
-        .resizable = true,
-        .vsync = false
+    window_descriptor desc[] = { 
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        },
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        },
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        },
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        },
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        },
+        {
+            .title = "Hello OpenGL",
+            .width = 800,
+            .height = 600,
+            .resizable = true,
+            .vsync = false
+        }
     };
 
-    init_renderer(desc);
+    init_renderer(desc, 6);
     
     renderer_on_update();
 
