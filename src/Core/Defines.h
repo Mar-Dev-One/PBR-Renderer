@@ -116,7 +116,7 @@ log_message(log_level level,
     vfprintf(stream, fmt, args);
     va_end(args);
 
-    fprintf(stream, "\033[0m\n");
+    fprintf(stream, "\033[0m");
 }
 
 

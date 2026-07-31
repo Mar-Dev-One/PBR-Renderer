@@ -75,6 +75,29 @@ window_size window_get_size(window* wind)
     return size;
 }
 
+void window_set_key_callback(window* wind, key_callback callback)
+{
+    glfwSetKeyCallback(wind->handle, callback);
+}
+
+
+void window_set_width(window* wind, uint16 width)
+{
+    wind->width = width;
+}
+
+void window_set_height(window* wind, uint16 height)
+{
+    wind->height = height;
+}
+
+
+void window_set_resize_callback(window* wind, resize_callback callback)
+{
+    glfwSetFramebufferSizeCallback(wind->handle, callback);
+}
+
+
 
 void window_set_title(window* wind, const char* title)
 {
