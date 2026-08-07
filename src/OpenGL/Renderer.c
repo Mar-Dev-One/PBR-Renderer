@@ -1,28 +1,13 @@
 #include "Renderer.h"
 
-#include "glad/gl.h"
 #include "glfw/glfw3.h"
 
-struct renderer {
-    window* drawing_window;
-};
 
 static renderer main_renderer;
 
-static void keyboard_input_handler(GLFWwindow* window,
-                  int key,
-                  int scancode,
-                  int action,
-                  int mods)
+renderer get_renderer()
 {
-    printf("Key %d Action %d\n", key, action);
-}
-
-static void on_resize(GLFWwindow* window, int width, int height)
-{
-    glViewport(0, 0, width, height);
-    window_set_width(main_renderer->drawing_window, width);
-    window_set_height(main_renderer->drawing_window, height);
+    return main_renderer;
 }
 
 b8 init_renderer(window_descriptor init_window_desc)
@@ -35,10 +20,8 @@ b8 init_renderer(window_descriptor init_window_desc)
     if (!gladLoadGL((GLADloadfunc)glfwGetProcAddress))
         FATAL("Failed to initialize GLAD");
 
-    window_set_key_callback(main_renderer->drawing_window, keyboard_input_handler);
-    window_set_resize_callback(main_renderer->drawing_window, on_resize);
-
 }
+
 
 void renderer_on_update()
 {
