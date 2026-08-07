@@ -75,35 +75,32 @@ window_size window_get_size(window* wind)
     return size;
 }
 
-void window_set_key_callback(window* wind, key_callback callback)
-{
-    glfwSetKeyCallback(wind->handle, callback);
-}
 
-
-void window_set_width(window* wind, uint16 width)
+void window_set_size(window* wind, uint16 width, uint16 height)
 {
+    glfwSetWindowSize(wind->handle, width, height);
     wind->width = width;
-}
-
-void window_set_height(window* wind, uint16 height)
-{
     wind->height = height;
 }
-
-
-void window_set_resize_callback(window* wind, resize_callback callback)
-{
-    glfwSetFramebufferSizeCallback(wind->handle, callback);
-}
-
-
 
 void window_set_title(window* wind, const char* title)
 {
     strncpy(wind->title, title, WINDOW_TITLE_MAX_LEN - 1);
     wind->title[WINDOW_TITLE_MAX_LEN - 1] = '\0';
 }
+
+
+
+void window_set_key_callback(window* wind, key_callback callback)
+{
+    glfwSetKeyCallback(wind->handle, callback);
+}
+
+void window_set_resize_callback(window* wind, resize_callback callback)
+{
+    glfwSetFramebufferSizeCallback(wind->handle, callback);
+}
+
 
 
 void window_destroy(window* wind)

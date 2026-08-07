@@ -1,22 +1,14 @@
-#include <stdio.h>
+#include "Core/Defines.h"
 
-#include "OpenGL/Renderer.h"
+#include "App.h"
 
 int main(void)
 {
-    window_descriptor desc = {
-        .title = "Hello OpenGL",
-        .width = 800,
-        .height = 600,
-        .resizable = true,
-        .vsync = false
+    App app = {
+        .name = "First app"
     };
-
-    init_renderer(desc);
-    
-    renderer_on_update();
-
-    terminate_renderer();
+    run(&app);
+    terminate(&app);
 
     return 0;
 }
