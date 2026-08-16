@@ -71,8 +71,8 @@ log_message(log_level level,
     {
         "TRACE",
         "DEBUG",
-        "INFO ",
-        "WARN ",
+        "INFO",
+        "WARN",
         "ERROR",
         "FATAL"
     };
@@ -122,13 +122,13 @@ log_message(log_level level,
 
 
 #define LOG_TRACE(...) \
-    log_message(LOG_LEVEL_TRACE, __FILE__, __LINE__, __VA_ARGS__)
+    log_message(LOG_LEVEL_TRACE, "", 0, __VA_ARGS__)
 
 #define LOG_DEBUG(...) \
-    log_message(LOG_LEVEL_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+    log_message(LOG_LEVEL_DEBUG, "", 0, __VA_ARGS__)
 
 #define LOG_INFO(...) \
-    log_message(LOG_LEVEL_INFO, __FILE__, __LINE__, __VA_ARGS__)
+    log_message(LOG_LEVEL_INFO, "", 0, __VA_ARGS__)
 
 #define LOG_WARN(...) \
     log_message(LOG_LEVEL_WARN, __FILE__, __LINE__, __VA_ARGS__)
