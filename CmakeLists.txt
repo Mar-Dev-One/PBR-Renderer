@@ -12,6 +12,7 @@ add_subdirectory(deps/glad)
 
 add_executable(PBR_Renderer
     src/main.c
+    src/App.c
     src/OpenGL/Renderer.c
     src/Platform/Window.c
 )
