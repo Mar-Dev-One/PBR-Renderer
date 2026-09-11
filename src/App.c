@@ -1,6 +1,6 @@
 #include "App.h"
 
-#include "OpenGL/Renderer.h"
+#include "Renderer/Renderer.h"
 
 static void keyboard_input_handler(GLFWwindow* window,
                   int key,

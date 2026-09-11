@@ -13,7 +13,13 @@ add_subdirectory(deps/glad)
 add_executable(PBR_Renderer
     src/main.c
     src/App.c
-    src/OpenGL/Renderer.c
+    src/Renderer/Renderer.c
+    src/RHI/RHI.c
+    src/RHI/OpenGL/RHI_GL.c
+    src/RHI/OpenGL/RHI_GL_Buffer.c
+    src/RHI/OpenGL/RHI_GL_Shader.c
+    src/RHI/OpenGL/RHI_GL_Texture.c
+    src/RHI/OpenGL/RHI_GL_Framebuffer.c
     src/Platform/Window.c
 )
 
