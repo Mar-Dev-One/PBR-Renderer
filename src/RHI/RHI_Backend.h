@@ -1,0 +1,40 @@
+#pragma once
+
+// Internal to RHI — never included outside RHI.c and the backend
+// folders (RHI/OpenGL, future RHI/Vulkan, etc). Callers of the public
+// RHI.h API never see this.
+
+#include "RHI.h"
+
+typedef struct rhi_backend_api
+{
+    b8   (*init)(rhi_proc_loader loader);
+    void (*shutdown)(void);
+
+    void (*set_viewport)(uint16 x, uint16 y, uint16 width, uint16 height);
+    void (*clear)(f32 r, f32 g, f32 b, f32 a);
+
+    rhi_buffer (*vertex_buffer_create)(const void* data, uint64 size,
+                                        const rhi_vertex_layout* layout,
+                                        rhi_buffer_usage usage);
+    rhi_buffer (*index_buffer_create)(const void* data, uint64 size, rhi_buffer_usage usage);
+    void       (*buffer_update)(rhi_buffer buffer, const void* data, uint64 size, uint64 offset);
+    void       (*buffer_destroy)(rhi_buffer buffer);
+
+    rhi_shader (*shader_create)(rhi_shader_desc desc);
+    void       (*shader_bind)(rhi_shader shader);
+    void       (*shader_destroy)(rhi_shader shader);
+
+    void (*texture_bind)(rhi_texture texture, uint32 slot);
+    rhi_texture (*texture_create)(rhi_texture_desc desc);
+    void        (*texture_destroy)(rhi_texture texture);
+
+    rhi_framebuffer (*framebuffer_create)(rhi_framebuffer_desc desc);
+    void            (*framebuffer_bind)(rhi_framebuffer framebuffer);
+    void            (*framebuffer_bind_default)(void);
+    rhi_texture     (*framebuffer_get_color_texture)(rhi_framebuffer framebuffer, uint32 index);
+    rhi_texture     (*framebuffer_get_depth_texture)(rhi_framebuffer framebuffer);
+    void            (*framebuffer_destroy)(rhi_framebuffer framebuffer);
+
+    void (*draw_indexed)(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
+} rhi_backend_api;

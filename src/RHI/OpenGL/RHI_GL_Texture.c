@@ -1,0 +1,102 @@
+#include "RHI_GL_Internal.h"
+
+static void
+gl_texture_format_info(rhi_texture_format format,
+                        GLenum* out_internal_format,
+                        GLenum* out_upload_format,
+                        GLenum* out_upload_type)
+{
+    switch (format)
+    {
+        case RHI_FORMAT_RGB8:
+            *out_internal_format = GL_RGB8;
+            *out_upload_format = GL_RGB;
+            *out_upload_type = GL_UNSIGNED_BYTE;
+            return;
+
+        case RHI_FORMAT_RGBA8:
+            *out_internal_format = GL_RGBA8;
+            *out_upload_format = GL_RGBA;
+            *out_upload_type = GL_UNSIGNED_BYTE;
+            return;
+
+        case RHI_FORMAT_RGBA16F:
+            *out_internal_format = GL_RGBA16F;
+            *out_upload_format = GL_RGBA;
+            *out_upload_type = GL_FLOAT;
+            return;
+
+        case RHI_FORMAT_DEPTH24:
+            *out_internal_format = GL_DEPTH_COMPONENT24;
+            *out_upload_format = GL_DEPTH_COMPONENT;
+            *out_upload_type = GL_FLOAT;
+            return;
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+static GLenum
+gl_filter_to_gl(rhi_texture_filter filter, b8 has_mipmaps)
+{
+    if (filter == RHI_FILTER_NEAREST)
+        return has_mipmaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST;
+
+    return has_mipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
+}
+
+static GLenum
+gl_wrap_to_gl(rhi_texture_wrap wrap)
+{
+    return (wrap == RHI_WRAP_REPEAT) ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+}
+
+rhi_texture gl_texture_create(rhi_texture_desc desc)
+{
+    GLenum internal_format, upload_format, upload_type;
+    gl_texture_format_info(desc.format, &internal_format, &upload_format, &upload_type);
+
+    rhi_texture tex = malloc(sizeof(*tex));
+    if (!tex)
+        FATAL("Out of memory creating texture");
+
+    glGenTextures(1, &tex->handle);
+    glBindTexture(GL_TEXTURE_2D, tex->handle);
+
+    // desc.pixels may be NULL — that's an empty texture (render-target
+    // attachment); GL just reserves the storage and leaves it undefined
+    // until something renders into it.
+    glTexImage2D(GL_TEXTURE_2D, 0, (GLint)internal_format,
+                 desc.width, desc.height, 0,
+                 upload_format, upload_type, desc.pixels);
+
+    b8 mipmaps = desc.pixels && desc.generate_mipmaps;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)gl_filter_to_gl(desc.filter, mipmaps));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)gl_filter_to_gl(desc.filter, false));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (GLint)gl_wrap_to_gl(desc.wrap));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (GLint)gl_wrap_to_gl(desc.wrap));
+
+    if (mipmaps)
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return tex;
+}
+
+void gl_texture_bind(rhi_texture texture, uint32 slot)
+{
+    glActiveTexture(GL_TEXTURE0 + slot);
+    glBindTexture(GL_TEXTURE_2D, texture->handle);
+}
+
+void gl_texture_destroy(rhi_texture texture)
+{
+    if (!texture)
+        return;
+
+    glDeleteTextures(1, &texture->handle);
+    free(texture);
+}

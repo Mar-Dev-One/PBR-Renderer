@@ -1,0 +1,70 @@
+#pragma once
+
+// Shared between the OpenGL backend's own files only (RHI_GL*.c).
+// Nothing outside src/RHI/OpenGL should ever include this — it's what
+// keeps GLuint out of RHI.c and every layer above it.
+
+#include "RHI_GL.h"
+#include "glad/gl.h"
+
+struct rhi_buffer
+{
+    GLuint handle;   // VBO or EBO
+    GLuint vao;      // only set for vertex buffers, 0 for index buffers
+};
+
+struct rhi_shader
+{
+    GLuint program;
+};
+
+struct rhi_texture
+{
+    GLuint handle;
+};
+
+struct rhi_framebuffer
+{
+    GLuint       fbo;
+    rhi_texture  color_textures[RHI_MAX_COLOR_ATTACHMENTS];
+    uint32       color_texture_count;
+    rhi_texture  depth_texture;   // NULL if the framebuffer has no depth attachment
+    uint16       width;
+    uint16       height;
+};
+
+// --- RHI_GL.c (device) ---------------------------------------------------
+b8   gl_init(rhi_proc_loader loader);
+void gl_shutdown(void);
+void gl_set_viewport(uint16 x, uint16 y, uint16 width, uint16 height);
+void gl_clear(f32 r, f32 g, f32 b, f32 a);
+void gl_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
+
+// --- RHI_GL_Buffer.c ---------------------------------------------------
+rhi_buffer gl_vertex_buffer_create(const void* data, uint64 size,
+                                    const rhi_vertex_layout* layout,
+                                    rhi_buffer_usage usage);
+rhi_buffer gl_index_buffer_create(const void* data, uint64 size, rhi_buffer_usage usage);
+void       gl_buffer_update(rhi_buffer buffer, const void* data, uint64 size, uint64 offset);
+void       gl_buffer_destroy(rhi_buffer buffer);
+
+// --- RHI_GL_Shader.c ---------------------------------------------------
+rhi_shader gl_shader_create(rhi_shader_desc desc);
+void       gl_shader_bind(rhi_shader shader);
+void       gl_shader_destroy(rhi_shader shader);
+
+// --- RHI_GL_Texture.c ---------------------------------------------------
+rhi_texture gl_texture_create(rhi_texture_desc desc);
+void        gl_texture_bind(rhi_texture texture, uint32 slot);
+void        gl_texture_destroy(rhi_texture texture);
+
+// --- RHI_GL_Framebuffer.c -----------------------------------------------
+rhi_framebuffer gl_framebuffer_create(rhi_framebuffer_desc desc);
+void            gl_framebuffer_bind(rhi_framebuffer framebuffer);
+void            gl_framebuffer_bind_default(void);
+rhi_texture     gl_framebuffer_get_color_texture(rhi_framebuffer framebuffer, uint32 index);
+rhi_texture     gl_framebuffer_get_depth_texture(rhi_framebuffer framebuffer);
+void            gl_framebuffer_destroy(rhi_framebuffer framebuffer);
+
+// Shared small helper (used by RHI_GL_Buffer.c)
+GLenum gl_usage_to_gl(rhi_buffer_usage usage);

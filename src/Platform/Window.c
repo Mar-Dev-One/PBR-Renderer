@@ -45,6 +45,11 @@ window* window_create(window_descriptor desc)
 }
 
 
+gl_proc_loader window_get_gl_loader(void)
+{
+    return (gl_proc_loader)glfwGetProcAddress;
+}
+
 void window_poll_events(void)
 {
     glfwPollEvents();

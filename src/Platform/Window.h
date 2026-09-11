@@ -23,8 +23,14 @@ typedef struct GLFWwindow GLFWwindow;
 typedef void (*key_callback)(GLFWwindow* window, int key, int scancode, int action, int mods);
 typedef void (*resize_callback)(GLFWwindow* window, int width, int height);
 
+// Generic GL proc-address loader, handed to the RHI backend so it can
+// resolve GL functions without RHI having to include GLFW itself.
+typedef void* (*gl_proc_loader)(const char* name);
+
 
 window* window_create(window_descriptor desc);
+
+gl_proc_loader window_get_gl_loader(void);
 
 void window_poll_events(void);
 void window_swap_buffers(window* wind);
