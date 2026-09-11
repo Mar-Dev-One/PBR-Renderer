@@ -13,18 +13,20 @@ renderer get_renderer()
 b8 init_renderer(window_descriptor init_window_desc)
 {
     if (!main_renderer)
-        main_renderer = malloc(sizeof(renderer));
+        main_renderer = malloc(sizeof(*main_renderer));
 
     main_renderer->drawing_window = window_create(init_window_desc);
     
     if (!gladLoadGL((GLADloadfunc)glfwGetProcAddress))
         FATAL("Failed to initialize GLAD");
 
+    return true;
+
 }
 
 void renderer_begin_frame()
 {
-
+    window_poll_events();
 }
 
 void renderer_end_frame()

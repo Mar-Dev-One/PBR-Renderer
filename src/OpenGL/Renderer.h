@@ -11,9 +11,10 @@ typedef struct renderer
     window* drawing_window;
 }*renderer;
 
-b8 init_renderer(window_descriptor init_window_desc);
-
 renderer get_renderer();
+
+
+b8 init_renderer(window_descriptor init_window_desc);
 
 void renderer_begin_frame();
 void renderer_end_frame();
