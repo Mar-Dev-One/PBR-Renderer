@@ -125,3 +125,10 @@ void rhi_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 
 {
     backend.draw_indexed(vertex_buffer, index_buffer, index_count);
 }
+
+
+////
+void rhi_read_pixels(uint16 x, uint16 y, uint16 width, uint16 height, void* out_pixels)
+{
+    backend.read_pixels(x, y, width, height, out_pixels);
+}

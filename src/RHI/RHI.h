@@ -117,6 +117,9 @@ rhi_buffer rhi_vertex_buffer_create(const void* data, uint64 size,
 rhi_buffer rhi_index_buffer_create(const void* data, uint64 size,
                                     rhi_buffer_usage usage);
 
+////
+void rhi_read_pixels(uint16 x, uint16 y, uint16 width, uint16 height, void* out_pixels);
+
 // Sub-range update, e.g. for RHI_USAGE_DYNAMIC buffers.
 void rhi_buffer_update(rhi_buffer buffer, const void* data, uint64 size, uint64 offset);
 void rhi_buffer_destroy(rhi_buffer buffer);
@@ -148,3 +151,5 @@ void            rhi_framebuffer_destroy(rhi_framebuffer framebuffer);
 
 // --- Drawing ------------------------------------------------------------
 void rhi_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
+
+

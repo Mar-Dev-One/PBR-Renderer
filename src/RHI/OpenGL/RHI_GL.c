@@ -48,6 +48,9 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->set_viewport = gl_set_viewport;
     out_api->clear = gl_clear;
 
+    ////
+    out_api->read_pixels = gl_read_pixels;
+
     out_api->vertex_buffer_create = gl_vertex_buffer_create;
     out_api->index_buffer_create = gl_index_buffer_create;
     out_api->buffer_update = gl_buffer_update;
@@ -69,4 +72,11 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->framebuffer_destroy = gl_framebuffer_destroy;
 
     out_api->draw_indexed = gl_draw_indexed;
+}
+
+////
+void gl_read_pixels(uint16 x, uint16 y, uint16 width, uint16 height, void* out_pixels)
+{
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out_pixels);
 }
