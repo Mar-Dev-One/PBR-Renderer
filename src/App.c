@@ -36,11 +36,14 @@ void run(App* app)
     window_set_key_callback(rend->drawing_window, keyboard_input_handler);
     window_set_resize_callback(rend->drawing_window, on_resize);
 
-    while (!window_should_close(rend->drawing_window)) {
+    while (!window_should_close(rend->drawing_window) && !app->should_close) {
         renderer_begin_frame();
 
         renderer_clear(0.4f, 0.1f, 0.12f, 1.0f);
-        
+
+        if (app->on_frame)
+            app->on_frame(app);
+
         LOG_INFO("width : %d, height %d\n", 
             window_get_size(rend->drawing_window).width,
             window_get_size(rend->drawing_window).height

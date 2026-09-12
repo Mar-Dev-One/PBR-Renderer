@@ -48,6 +48,9 @@ rhi_buffer gl_index_buffer_create(const void* data, uint64 size, rhi_buffer_usag
 void       gl_buffer_update(rhi_buffer buffer, const void* data, uint64 size, uint64 offset);
 void       gl_buffer_destroy(rhi_buffer buffer);
 
+////
+void gl_read_pixels(uint16 x, uint16 y, uint16 width, uint16 height, void* out_pixels);
+
 // --- RHI_GL_Shader.c ---------------------------------------------------
 rhi_shader gl_shader_create(rhi_shader_desc desc);
 void       gl_shader_bind(rhi_shader shader);

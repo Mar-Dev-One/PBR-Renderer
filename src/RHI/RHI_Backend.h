@@ -14,6 +14,9 @@ typedef struct rhi_backend_api
     void (*set_viewport)(uint16 x, uint16 y, uint16 width, uint16 height);
     void (*clear)(f32 r, f32 g, f32 b, f32 a);
 
+    ////
+    void (*read_pixels)(uint16 x, uint16 y, uint16 width, uint16 height, void* out_pixels);
+
     rhi_buffer (*vertex_buffer_create)(const void* data, uint64 size,
                                         const rhi_vertex_layout* layout,
                                         rhi_buffer_usage usage);

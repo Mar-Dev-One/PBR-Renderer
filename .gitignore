@@ -56,3 +56,6 @@ dkms.conf
 
 #build files
 build/
+
+#program output files
+rhi_triangle_test_output.ppm
