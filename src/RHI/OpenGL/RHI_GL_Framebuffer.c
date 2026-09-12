@@ -73,6 +73,13 @@ void gl_framebuffer_bind(rhi_framebuffer framebuffer)
 void gl_framebuffer_bind_default(void)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // gl_framebuffer_bind() leaves glViewport set to the FBO's size. Restore
+    // it to the actual window/screen viewport, otherwise anything drawn
+    // after an offscreen pass (of a different size than the window) renders
+    // into the wrong region until the next resize event.
+    gl_viewport vp = g_gl_screen_viewport;
+    glViewport(vp.x, vp.y, vp.width, vp.height);
 }
 
 rhi_texture gl_framebuffer_get_color_texture(rhi_framebuffer framebuffer, uint32 index)

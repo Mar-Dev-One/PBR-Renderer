@@ -21,6 +21,12 @@ b8 init_renderer(window_descriptor init_window_desc)
     if (!rhi_init(RHI_BACKEND_OPENGL, window_get_gl_loader()))
         FATAL("Failed to initialize RHI");
 
+    // Establish the initial screen viewport now — otherwise it's left at
+    // {0,0,0,0} until the first resize event, and any offscreen pass done
+    // before that would restore to a zero-size viewport on
+    // rhi_framebuffer_bind_default().
+    rhi_set_viewport(0, 0, init_window_desc.width, init_window_desc.height);
+
     return true;
 }
 

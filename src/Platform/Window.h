@@ -40,6 +40,13 @@ void window_close(window* wind);
 void window_set_size(window* wind, uint16 width, uint16 height);
 void window_set_title(window* wind, const char* title);
 
+// Updates the window's cached width/height WITHOUT calling glfwSetWindowSize.
+// Use this from a resize/framebuffer-size callback, where GLFW has already
+// resized the window and you just need to record the new size — calling
+// window_set_size() there would issue a redundant resize request back at
+// GLFW from inside its own callback.
+void window_on_resized(window* wind, uint16 width, uint16 height);
+
 void window_set_key_callback(window* wind, key_callback callback);
 void window_set_resize_callback(window* wind, resize_callback callback);
 

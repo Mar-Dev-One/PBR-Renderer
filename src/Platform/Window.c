@@ -88,6 +88,12 @@ void window_set_size(window* wind, uint16 width, uint16 height)
     wind->height = height;
 }
 
+void window_on_resized(window* wind, uint16 width, uint16 height)
+{
+    wind->width = width;
+    wind->height = height;
+}
+
 void window_set_title(window* wind, const char* title)
 {
     strncpy(wind->title, title, WINDOW_TITLE_MAX_LEN - 1);

@@ -1,5 +1,7 @@
 #include "RHI_GL_Internal.h"
 
+gl_viewport g_gl_screen_viewport = { 0, 0, 0, 0 };
+
 GLenum gl_usage_to_gl(rhi_buffer_usage usage)
 {
     return (usage == RHI_USAGE_DYNAMIC) ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW;
@@ -13,6 +15,17 @@ b8 gl_init(rhi_proc_loader loader)
         return false;
     }
 
+    // Nothing draws correctly in 3D without this: without depth testing,
+    // triangles are rasterized in submission order regardless of distance
+    // from the camera.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    // Standard back-face culling. Safe to enable now (nothing currently
+    // relies on seeing back faces) and needed once real meshes show up.
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
     return true;
 }
 
@@ -24,6 +37,7 @@ void gl_shutdown(void)
 
 void gl_set_viewport(uint16 x, uint16 y, uint16 width, uint16 height)
 {
+    g_gl_screen_viewport = (gl_viewport){ x, y, width, height };
     glViewport(x, y, width, height);
 }
 
