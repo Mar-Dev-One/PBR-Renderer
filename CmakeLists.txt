@@ -13,6 +13,8 @@ add_subdirectory(deps/glad)
 add_executable(PBR_Renderer
     src/main.c
     src/App.c
+    src/Core/FileIO.c
+    src/Core/Paths.c
     src/Renderer/Renderer.c
     src/RHI/RHI.c
     src/RHI/OpenGL/RHI_GL.c
@@ -27,4 +29,10 @@ target_link_libraries(PBR_Renderer PRIVATE
     glfw
     glad
     OpenGL::GL
+)
+
+# Absolute path to assets/ baked into the binary, so asset_path() resolves
+# correctly regardless of the process's current working directory.
+target_compile_definitions(PBR_Renderer PRIVATE
+    ASSETS_ROOT="${CMAKE_SOURCE_DIR}/assets"
 )

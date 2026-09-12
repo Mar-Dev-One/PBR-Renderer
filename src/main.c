@@ -7,11 +7,17 @@
 // RHI, draws a colored triangle into an off-screen RHI framebuffer, reads
 // the pixels back, checks the result, then tells App to stop.
 //
+// The shader is loaded from assets/shaders/basic.{vert,frag} via
+// rhi_shader_create_from_files() rather than embedded as a string, so
+// this test also exercises that path (and ASSETS_ROOT resolution) instead
+// of just the RHI's raw-string shader entry point.
+//
 // Exit code 0 = pass, 1 = fail, so it can be wired into ctest via
 // add_test() (see CMakeLists.txt).
 
 #include "../src/App.h"
 #include "../src/Core/Defines.h"
+#include "../src/Core/Paths.h"
 #include "../src/RHI/RHI.h"
 
 #include <string.h>
@@ -25,26 +31,6 @@ typedef struct test_context
 {
     int failures;
 } test_context;
-
-static const char* k_vertex_src =
-    "#version 460 core\n"
-    "layout(location = 0) in vec2 in_pos;\n"
-    "layout(location = 1) in vec3 in_color;\n"
-    "out vec3 v_color;\n"
-    "void main()\n"
-    "{\n"
-    "    v_color = in_color;\n"
-    "    gl_Position = vec4(in_pos, 0.0, 1.0);\n"
-    "}\n";
-
-static const char* k_fragment_src =
-    "#version 460 core\n"
-    "in vec3 v_color;\n"
-    "out vec4 frag_color;\n"
-    "void main()\n"
-    "{\n"
-    "    frag_color = vec4(v_color, 1.0);\n"
-    "}\n";
 
 static rgba8
 sample(const rgba8* pixels, int x, int y)
@@ -123,16 +109,19 @@ static void on_frame(App* app)
     rhi_buffer vb = rhi_vertex_buffer_create(vertices, sizeof(vertices), &layout, RHI_USAGE_STATIC);
     rhi_buffer ib = rhi_index_buffer_create(indices, sizeof(indices), RHI_USAGE_STATIC);
 
-    // --- Shader.
-    rhi_shader_desc shader_desc = {
-        .vertex_src = k_vertex_src,
-        .fragment_src = k_fragment_src
-    };
+    // --- Shader: loaded from assets/shaders/ rather than embedded, so
+    // this test also exercises rhi_shader_create_from_files() + asset_path().
+    char* vertex_path = asset_path("shaders/basic.vert");
+    char* fragment_path = asset_path("shaders/basic.frag");
 
-    rhi_shader shader = rhi_shader_create(shader_desc);
+    rhi_shader shader = rhi_shader_create_from_files(vertex_path, fragment_path);
+
+    free(vertex_path);
+    free(fragment_path);
+
     if (!shader)
     {
-        LOG_ERROR("FAIL: rhi_shader_create failed to compile/link the test shader\n");
+        LOG_ERROR("FAIL: rhi_shader_create_from_files failed to load/compile/link the test shader\n");
         ctx->failures++;
         app->should_close = true;
         return;
