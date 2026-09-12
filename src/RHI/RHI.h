@@ -126,6 +126,12 @@ void rhi_buffer_destroy(rhi_buffer buffer);
 
 // --- Shaders ---------------------------------------------------------
 rhi_shader rhi_shader_create(rhi_shader_desc desc);
+
+// Same as rhi_shader_create(), but reads the vertex/fragment source from
+// disk first. Returns NULL if either file can't be read, or if compilation
+// fails (see rhi_shader_create()).
+rhi_shader rhi_shader_create_from_files(const char* vertex_path, const char* fragment_path);
+
 void       rhi_shader_bind(rhi_shader shader);
 void       rhi_shader_destroy(rhi_shader shader);
 

@@ -1,6 +1,8 @@
 #include "RHI.h"
 #include "RHI_Backend.h"
 
+#include "../Core/FileIO.h"
+
 #include "OpenGL/RHI_GL.h"
 // Add new backend headers here as new src/RHI/<Api>/ folders appear,
 // e.g. #include "Vulkan/RHI_VK.h"
@@ -63,6 +65,29 @@ void rhi_buffer_destroy(rhi_buffer buffer)
 rhi_shader rhi_shader_create(rhi_shader_desc desc)
 {
     return backend.shader_create(desc);
+}
+
+rhi_shader rhi_shader_create_from_files(const char* vertex_path, const char* fragment_path)
+{
+    char* vertex_src = file_read_to_string(vertex_path);
+    char* fragment_src = file_read_to_string(fragment_path);
+
+    rhi_shader shader = NULL;
+
+    if (vertex_src && fragment_src)
+    {
+        rhi_shader_desc desc = {
+            .vertex_src = vertex_src,
+            .fragment_src = fragment_src
+        };
+
+        shader = rhi_shader_create(desc);
+    }
+
+    free(vertex_src);
+    free(fragment_src);
+
+    return shader;
 }
 
 void rhi_shader_bind(rhi_shader shader)
