@@ -14,8 +14,12 @@ static void keyboard_input_handler(GLFWwindow* window,
 static void on_resize(GLFWwindow* window, int width, int height)
 {
     renderer rend = get_renderer();
-    renderer_set_viewport(0, 0, width, height);
-    window_set_size(rend->drawing_window, width, height);
+    // GLFW already resized the window (this callback IS the notification) —
+    // just record the new size and update the viewport. Calling
+    // window_set_size() here would call glfwSetWindowSize() again from
+    // inside GLFW's own resize callback.
+    window_on_resized(rend->drawing_window, (uint16)width, (uint16)height);
+    renderer_set_viewport(0, 0, (uint16)width, (uint16)height);
 }
 
 void run(App* app)

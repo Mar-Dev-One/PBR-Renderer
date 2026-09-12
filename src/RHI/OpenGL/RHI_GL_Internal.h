@@ -40,6 +40,13 @@ void gl_set_viewport(uint16 x, uint16 y, uint16 width, uint16 height);
 void gl_clear(f32 r, f32 g, f32 b, f32 a);
 void gl_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
 
+// The most recent viewport passed to gl_set_viewport(). This is what the
+// window/screen viewport currently is (App resizes call rhi_set_viewport
+// with the full window size), so gl_framebuffer_bind_default() can restore
+// it after an offscreen pass leaves glViewport pointing at an FBO's size.
+typedef struct gl_viewport { uint16 x, y, width, height; } gl_viewport;
+extern gl_viewport g_gl_screen_viewport;
+
 // --- RHI_GL_Buffer.c ---------------------------------------------------
 rhi_buffer gl_vertex_buffer_create(const void* data, uint64 size,
                                     const rhi_vertex_layout* layout,
