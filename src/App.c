@@ -65,6 +65,10 @@ void run(App* app)
         imgui_layer_render();
 
         renderer_end_frame();
+
+        // Must come after the swap above -- it makes the popped-out
+        // windows' own GL contexts current to draw them.
+        imgui_layer_render_platform_windows();
     }
 }
 
