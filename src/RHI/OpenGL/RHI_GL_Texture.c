@@ -64,6 +64,14 @@ rhi_texture gl_texture_create(rhi_texture_desc desc)
     glGenTextures(1, &tex->handle);
     glBindTexture(GL_TEXTURE_2D, tex->handle);
 
+    // GL's default GL_UNPACK_ALIGNMENT is 4, meaning it assumes each row of
+    // the source data starts on a 4-byte boundary. RGB8 is 3 bytes/pixel, so
+    // any width that isn't a multiple of 4 pixels (the common case for real
+    // textures) breaks that assumption and GL reads each row shifted from
+    // where it actually is, corrupting/skewing the image. Set it to 1
+    // (tightly packed, no row padding) so uploads work for any dimensions.
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
     // desc.pixels may be NULL — that's an empty texture (render-target
     // attachment); GL just reserves the storage and leaves it undefined
     // until something renders into it.

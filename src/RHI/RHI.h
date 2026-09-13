@@ -135,6 +135,15 @@ rhi_shader rhi_shader_create_from_files(const char* vertex_path, const char* fra
 void       rhi_shader_bind(rhi_shader shader);
 void       rhi_shader_destroy(rhi_shader shader);
 
+// --- Shader uniforms -----------------------------------------------------
+// Uses GL's Direct State Access (glProgramUniform*, core since GL 4.1) —
+// the shader does NOT need to be bound first. `matrix` is 16 floats,
+// column-major (the layout cglm's mat4 already uses, so callers can just
+// pass `(const f32*)&some_mat4[0][0]`).
+void rhi_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix);
+void rhi_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
+void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value);
+
 // --- Textures ----------------------------------------------------------
 // Standalone textures — loaded image data (albedo/normal/roughness maps,
 // once something in the codebase decodes image files) as well as empty

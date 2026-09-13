@@ -18,6 +18,8 @@ create_attachment(rhi_texture_format format, uint16 width, uint16 height)
 
 rhi_framebuffer gl_framebuffer_create(rhi_framebuffer_desc desc)
 {
+    // Bound is already enforced unconditionally in rhi_framebuffer_create()
+    // (see RHI.c) before this backend function is ever called.
     ASSERT(desc.color_attachment_count <= RHI_MAX_COLOR_ATTACHMENTS);
 
     rhi_framebuffer fb = malloc(sizeof(*fb));

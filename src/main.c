@@ -214,8 +214,7 @@ static void on_frame(App* app)
         LOG_INFO("PASS: triangle covers a plausible fraction of the framebuffer\n");
     }
 
-    
-    /*
+
     // --- Cleanup.
     free(pixels);
     rhi_framebuffer_destroy(fb);
@@ -224,7 +223,6 @@ static void on_frame(App* app)
     rhi_buffer_destroy(vb);
 
     app->should_close = true; // one frame is all this test needs
-    */
 }
 
 int main(void)
