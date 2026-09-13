@@ -100,6 +100,21 @@ void rhi_shader_destroy(rhi_shader shader)
     backend.shader_destroy(shader);
 }
 
+void rhi_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix)
+{
+    backend.shader_set_mat4(shader, name, matrix);
+}
+
+void rhi_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z)
+{
+    backend.shader_set_vec3(shader, name, x, y, z);
+}
+
+void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value)
+{
+    backend.shader_set_int(shader, name, value);
+}
+
 void rhi_texture_bind(rhi_texture texture, uint32 slot)
 {
     backend.texture_bind(texture, slot);
@@ -117,7 +132,14 @@ void rhi_texture_destroy(rhi_texture texture)
 
 rhi_framebuffer rhi_framebuffer_create(rhi_framebuffer_desc desc)
 {
-    ASSERT(desc.color_attachment_count <= RHI_MAX_COLOR_ATTACHMENTS);
+    // ASSERT compiles to nothing in release (NDEBUG) builds, but the
+    // backend still writes color_attachment_count entries into a
+    // fixed-size RHI_MAX_COLOR_ATTACHMENTS stack array — so this bound
+    // has to be enforced unconditionally, not just asserted in debug.
+    if (desc.color_attachment_count > RHI_MAX_COLOR_ATTACHMENTS)
+        FATAL("rhi_framebuffer_create: color_attachment_count (%u) exceeds RHI_MAX_COLOR_ATTACHMENTS (%u)",
+              desc.color_attachment_count, RHI_MAX_COLOR_ATTACHMENTS);
+
     return backend.framebuffer_create(desc);
 }
 

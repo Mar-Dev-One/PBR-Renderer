@@ -75,3 +75,33 @@ void gl_shader_destroy(rhi_shader shader)
     glDeleteProgram(shader->program);
     free(shader);
 }
+
+void gl_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix)
+{
+    GLint location = glGetUniformLocation(shader->program, name);
+    if (location < 0)
+        return; // unused-uniform-optimized-out or a typo'd name; not fatal
+
+    // glProgramUniform (DSA, core since GL 4.1) writes to the given
+    // program's uniform directly — unlike glUniform*, it does not require
+    // that program to be the currently bound one via glUseProgram.
+    glProgramUniformMatrix4fv(shader->program, location, 1, GL_FALSE, matrix);
+}
+
+void gl_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z)
+{
+    GLint location = glGetUniformLocation(shader->program, name);
+    if (location < 0)
+        return;
+
+    glProgramUniform3f(shader->program, location, x, y, z);
+}
+
+void gl_shader_set_int(rhi_shader shader, const char* name, int32 value)
+{
+    GLint location = glGetUniformLocation(shader->program, name);
+    if (location < 0)
+        return;
+
+    glProgramUniform1i(shader->program, location, value);
+}

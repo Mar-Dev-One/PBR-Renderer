@@ -34,6 +34,11 @@ gl_proc_loader window_get_gl_loader(void);
 
 void window_poll_events(void);
 void window_swap_buffers(window* wind);
+
+// Seconds elapsed since the first call to window_create() in this process.
+// Used for animation/timing (e.g. rotating something based on elapsed time)
+// without callers having to include GLFW directly.
+f64  window_get_time(void);
 b8   window_should_close(window* wind);
 void window_close(window* wind);
 

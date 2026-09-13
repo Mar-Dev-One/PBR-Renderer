@@ -9,9 +9,10 @@ find_package(OpenGL REQUIRED)
 
 add_subdirectory(deps/glfw)
 add_subdirectory(deps/glad)
+add_subdirectory(deps/cglm)
 
 add_executable(PBR_Renderer
-    src/main.c
+    src/demo.c
     src/App.c
     src/Core/FileIO.c
     src/Core/Paths.c
@@ -23,12 +24,14 @@ add_executable(PBR_Renderer
     src/RHI/OpenGL/RHI_GL_Texture.c
     src/RHI/OpenGL/RHI_GL_Framebuffer.c
     src/Platform/Window.c
+    src/scene/Camera.c
 )
 
 target_link_libraries(PBR_Renderer PRIVATE
     glfw
     glad
     OpenGL::GL
+    cglm
 )
 
 # Absolute path to assets/ baked into the binary, so asset_path() resolves

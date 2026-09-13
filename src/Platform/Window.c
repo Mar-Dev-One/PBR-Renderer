@@ -2,6 +2,8 @@
 
 #include "GLFW/glfw3.h"
 
+#include <string.h>
+
 #define WINDOW_TITLE_MAX_LEN 128
 
 struct window {
@@ -53,6 +55,11 @@ gl_proc_loader window_get_gl_loader(void)
 void window_poll_events(void)
 {
     glfwPollEvents();
+}
+
+f64 window_get_time(void)
+{
+    return glfwGetTime();
 }
 
 void window_swap_buffers(window* wind)
