@@ -18,3 +18,9 @@ void imgui_layer_new_frame(void);
 // / the buffer swap -- this is what actually draws the UI on top of
 // whatever the renderer already drew.
 void imgui_layer_render(void);
+
+// Call once per frame, AFTER renderer_end_frame() (i.e. after the main
+// window's buffer swap). Draws any panels that got dragged out into their
+// own OS windows -- only does anything when ImGuiConfigFlags_ViewportsEnable
+// is set (see imgui_layer_init).
+void imgui_layer_render_platform_windows(void);
