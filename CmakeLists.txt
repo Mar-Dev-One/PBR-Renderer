@@ -1,15 +1,21 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(PBR_Renderer VERSION 1.0.0 LANGUAGES C)
+# CXX is needed for Dear ImGui / cimgui, which are C++; everything else in
+# this project stays C.
+project(PBR_Renderer VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenGL REQUIRED)
 
 add_subdirectory(deps/glfw)
 add_subdirectory(deps/glad)
 add_subdirectory(deps/cglm)
+include(cmake/cimgui.cmake)
 
 add_executable(PBR_Renderer
     src/demo.c
@@ -24,7 +30,8 @@ add_executable(PBR_Renderer
     src/RHI/OpenGL/RHI_GL_Texture.c
     src/RHI/OpenGL/RHI_GL_Framebuffer.c
     src/Platform/Window.c
-    src/scene/Camera.c
+    src/Scene/Camera.c
+    src/UI/ImGuiLayer.c
 )
 
 target_link_libraries(PBR_Renderer PRIVATE
@@ -32,6 +39,7 @@ target_link_libraries(PBR_Renderer PRIVATE
     glad
     OpenGL::GL
     cglm
+    cimgui
 )
 
 # Absolute path to assets/ baked into the binary, so asset_path() resolves

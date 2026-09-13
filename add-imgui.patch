@@ -1,0 +1,295 @@
+diff --git a/.gitmodules b/.gitmodules
+index 818c08d..44bf5a6 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -4,3 +4,6 @@
+ [submodule "deps/cglm"]
+ 	path = deps/cglm
+ 	url = https://github.com/recp/cglm.git
++[submodule "deps/cimgui"]
++	path = deps/cimgui
++	url = https://github.com/cimgui/cimgui.git
+diff --git a/CmakeLists.txt b/CmakeLists.txt
+index dd48ee5..5a7f432 100644
+--- a/CmakeLists.txt
++++ b/CmakeLists.txt
+@@ -1,15 +1,21 @@
+ cmake_minimum_required(VERSION 3.10)
+ 
+-project(PBR_Renderer VERSION 1.0.0 LANGUAGES C)
++# CXX is needed for Dear ImGui / cimgui, which are C++; everything else in
++# this project stays C.
++project(PBR_Renderer VERSION 1.0.0 LANGUAGES C CXX)
+ 
+ set(CMAKE_C_STANDARD 11)
+ set(CMAKE_C_STANDARD_REQUIRED ON)
+ 
++set(CMAKE_CXX_STANDARD 17)
++set(CMAKE_CXX_STANDARD_REQUIRED ON)
++
+ find_package(OpenGL REQUIRED)
+ 
+ add_subdirectory(deps/glfw)
+ add_subdirectory(deps/glad)
+ add_subdirectory(deps/cglm)
++include(cmake/cimgui.cmake)
+ 
+ add_executable(PBR_Renderer
+     src/demo.c
+@@ -24,7 +30,8 @@ add_executable(PBR_Renderer
+     src/RHI/OpenGL/RHI_GL_Texture.c
+     src/RHI/OpenGL/RHI_GL_Framebuffer.c
+     src/Platform/Window.c
+-    src/scene/Camera.c
++    src/Scene/Camera.c
++    src/UI/ImGuiLayer.c
+ )
+ 
+ target_link_libraries(PBR_Renderer PRIVATE
+@@ -32,6 +39,7 @@ target_link_libraries(PBR_Renderer PRIVATE
+     glad
+     OpenGL::GL
+     cglm
++    cimgui
+ )
+ 
+ # Absolute path to assets/ baked into the binary, so asset_path() resolves
+diff --git a/cmake/cimgui.cmake b/cmake/cimgui.cmake
+new file mode 100644
+index 0000000..e8dfe50
+--- /dev/null
++++ b/cmake/cimgui.cmake
+@@ -0,0 +1,49 @@
++# Builds cimgui (the C API for Dear ImGui) plus the GLFW + OpenGL3 backends,
++# as a static library the rest of the (C) project can link against.
++#
++# Dear ImGui itself is C++; this project is pure C, so cimgui is what lets
++# us call it from C. The backend .cpp files are compiled in here too and
++# exposed with C linkage (IMGUI_IMPL_API) so RHI/Window code never has to
++# touch C++.
++
++set(CIMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/cimgui)
++set(IMGUI_DIR  ${CIMGUI_DIR}/imgui)
++
++add_library(cimgui STATIC
++    ${CIMGUI_DIR}/cimgui.cpp
++    ${IMGUI_DIR}/imgui.cpp
++    ${IMGUI_DIR}/imgui_draw.cpp
++    ${IMGUI_DIR}/imgui_tables.cpp
++    ${IMGUI_DIR}/imgui_widgets.cpp
++    ${IMGUI_DIR}/imgui_demo.cpp
++    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
++    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
++)
++
++target_include_directories(cimgui PUBLIC
++    ${CIMGUI_DIR}
++    ${IMGUI_DIR}
++    ${IMGUI_DIR}/backends
++)
++
++target_compile_definitions(cimgui PUBLIC
++    IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
++    CIMGUI_USE_GLFW=1
++    CIMGUI_USE_OPENGL3=1
++)
++
++# CIMGUI_DEFINE_ENUMS_AND_STRUCTS makes cimgui.h define its own plain-C
++# struct layouts (ImVec2, ImRect, etc). cimgui.cpp itself must NOT see this
++# -- it's built against the real C++ ImGui types -- so this is INTERFACE
++# only: it reaches C code that includes cimgui.h, not cimgui.cpp.
++target_compile_definitions(cimgui INTERFACE
++    CIMGUI_DEFINE_ENUMS_AND_STRUCTS=1
++)
++
++if (WIN32)
++    target_compile_definitions(cimgui PUBLIC "IMGUI_IMPL_API=extern \"C\" __declspec(dllexport)")
++else()
++    target_compile_definitions(cimgui PUBLIC "IMGUI_IMPL_API=extern \"C\"")
++endif()
++
++target_link_libraries(cimgui PUBLIC glfw OpenGL::GL)
+diff --git a/src/App.c b/src/App.c
+index a317d05..c2346d7 100644
+--- a/src/App.c
++++ b/src/App.c
+@@ -1,6 +1,7 @@
+ #include "App.h"
+ 
+ #include "Renderer/Renderer.h"
++#include "UI/ImGuiLayer.h"
+ 
+ static void keyboard_input_handler(GLFWwindow* window,
+                   int key,
+@@ -40,11 +41,17 @@ void run(App* app)
+     window_set_key_callback(rend->drawing_window, keyboard_input_handler);
+     window_set_resize_callback(rend->drawing_window, on_resize);
+ 
++    // ImGui needs a live GL context + GLFW window, so it can only be set
++    // up after init_renderer() above has created both.
++    imgui_layer_init(rend->drawing_window);
++
+     while (!window_should_close(rend->drawing_window) && !app->should_close) {
+         renderer_begin_frame();
+ 
+         renderer_clear(0.4f, 0.1f, 0.12f, 1.0f);
+ 
++        imgui_layer_new_frame();
++
+         if (app->on_frame)
+             app->on_frame(app);
+ 
+@@ -52,12 +59,17 @@ void run(App* app)
+             window_get_size(rend->drawing_window).width,
+             window_get_size(rend->drawing_window).height
+         );
+-        
++
++        // Draws on top of whatever on_frame just rendered, still before
++        // the swap so it actually shows up on screen.
++        imgui_layer_render();
++
+         renderer_end_frame();
+     }
+ }
+ 
+ void terminate(App* app)
+ {
++    imgui_layer_shutdown();
+     terminate_renderer();
+ }
+\ No newline at end of file
+diff --git a/src/Platform/Window.c b/src/Platform/Window.c
+index 7b94f4c..2bd6c26 100644
+--- a/src/Platform/Window.c
++++ b/src/Platform/Window.c
+@@ -52,6 +52,11 @@ gl_proc_loader window_get_gl_loader(void)
+     return (gl_proc_loader)glfwGetProcAddress;
+ }
+ 
++GLFWwindow* window_get_native_handle(window* wind)
++{
++    return wind->handle;
++}
++
+ void window_poll_events(void)
+ {
+     glfwPollEvents();
+diff --git a/src/Platform/Window.h b/src/Platform/Window.h
+index 38149d7..aa78c28 100644
+--- a/src/Platform/Window.h
++++ b/src/Platform/Window.h
+@@ -32,6 +32,11 @@ window* window_create(window_descriptor desc);
+ 
+ gl_proc_loader window_get_gl_loader(void);
+ 
++// Raw GLFWwindow* handle. Needed by things that sit outside the RHI and
++// have to talk to GLFW directly (e.g. the ImGui GLFW backend). Everything
++// else should keep going through the window* API above.
++GLFWwindow* window_get_native_handle(window* wind);
++
+ void window_poll_events(void);
+ void window_swap_buffers(window* wind);
+ 
+diff --git a/src/UI/ImGuiLayer.c b/src/UI/ImGuiLayer.c
+new file mode 100644
+index 0000000..789d233
+--- /dev/null
++++ b/src/UI/ImGuiLayer.c
+@@ -0,0 +1,39 @@
++#include "ImGuiLayer.h"
++
++#include "cimgui.h"
++#include "cimgui_impl.h"
++
++void imgui_layer_init(window* wind)
++{
++    igCreateContext(NULL);
++
++    ImGuiIO* io = igGetIO_Nil();
++    io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
++    io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
++
++    igStyleColorsDark(NULL);
++
++    GLFWwindow* handle = window_get_native_handle(wind);
++    ImGui_ImplGlfw_InitForOpenGL(handle, true);
++    ImGui_ImplOpenGL3_Init("#version 460");
++}
++
++void imgui_layer_shutdown(void)
++{
++    ImGui_ImplOpenGL3_Shutdown();
++    ImGui_ImplGlfw_Shutdown();
++    igDestroyContext(NULL);
++}
++
++void imgui_layer_new_frame(void)
++{
++    ImGui_ImplOpenGL3_NewFrame();
++    ImGui_ImplGlfw_NewFrame();
++    igNewFrame();
++}
++
++void imgui_layer_render(void)
++{
++    igRender();
++    ImGui_ImplOpenGL3_RenderDrawData(igGetDrawData());
++}
+diff --git a/src/UI/ImGuiLayer.h b/src/UI/ImGuiLayer.h
+new file mode 100644
+index 0000000..fc4138c
+--- /dev/null
++++ b/src/UI/ImGuiLayer.h
+@@ -0,0 +1,20 @@
++#pragma once
++
++#include "../Core/Defines.h"
++#include "../Platform/Window.h"
++
++// Thin wrapper around cimgui (Dear ImGui's C API) + its GLFW/OpenGL3
++// backends. Keeps every ImGui/cimgui header out of the rest of the
++// codebase -- callers only ever see this file.
++
++void imgui_layer_init(window* wind);
++void imgui_layer_shutdown(void);
++
++// Call once per frame, after renderer_begin_frame() and before any ImGui
++// ig*() calls (including app->on_frame, if it draws UI).
++void imgui_layer_new_frame(void);
++
++// Call once per frame, after app->on_frame and before renderer_end_frame()
++// / the buffer swap -- this is what actually draws the UI on top of
++// whatever the renderer already drew.
++void imgui_layer_render(void);
+diff --git a/src/demo.c b/src/demo.c
+index 6d320a6..90e8099 100644
+--- a/src/demo.c
++++ b/src/demo.c
+@@ -14,6 +14,7 @@
+ #include "Renderer/Renderer.h"
+ #include "Scene/Camera.h"
+ #include "Platform/Window.h"
++#include "cimgui.h"
+ 
+ typedef struct demo_state
+ {
+@@ -147,6 +148,18 @@ static void on_frame(App* app)
+     rhi_shader_bind(state->shader);
+     rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
+                       sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
++
++    // App/on_frame runs between imgui_layer_new_frame() and
++    // imgui_layer_render() (see App.c), so any ig*() calls here just work.
++    // Demo window to prove the wiring is correct -- swap this out for real
++    // panels once you're building your own UI.
++    // Fullscreen dockspace so ImGui windows (the demo window included) can
++    // actually be dragged and docked against something. dockspace_id=0
++    // auto-generates an ID; NULL viewport = the main viewport; no flags,
++    // no window-class restriction.
++    igDockSpaceOverViewport(0, NULL, ImGuiDockNodeFlags_PassthruCentralNode, NULL);
++
++    igShowDemoWindow(NULL);
+ }
+ 
+ int main(void)

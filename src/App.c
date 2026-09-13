@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include "Renderer/Renderer.h"
+#include "UI/ImGuiLayer.h"
 
 static void keyboard_input_handler(GLFWwindow* window,
                   int key,
@@ -40,10 +41,16 @@ void run(App* app)
     window_set_key_callback(rend->drawing_window, keyboard_input_handler);
     window_set_resize_callback(rend->drawing_window, on_resize);
 
+    // ImGui needs a live GL context + GLFW window, so it can only be set
+    // up after init_renderer() above has created both.
+    imgui_layer_init(rend->drawing_window);
+
     while (!window_should_close(rend->drawing_window) && !app->should_close) {
         renderer_begin_frame();
 
         renderer_clear(0.4f, 0.1f, 0.12f, 1.0f);
+
+        imgui_layer_new_frame();
 
         if (app->on_frame)
             app->on_frame(app);
@@ -52,12 +59,17 @@ void run(App* app)
             window_get_size(rend->drawing_window).width,
             window_get_size(rend->drawing_window).height
         );
-        
+
+        // Draws on top of whatever on_frame just rendered, still before
+        // the swap so it actually shows up on screen.
+        imgui_layer_render();
+
         renderer_end_frame();
     }
 }
 
 void terminate(App* app)
 {
+    imgui_layer_shutdown();
     terminate_renderer();
 }

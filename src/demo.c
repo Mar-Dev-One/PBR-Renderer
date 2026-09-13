@@ -14,6 +14,7 @@
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
 #include "Platform/Window.h"
+#include "cimgui.h"
 
 typedef struct demo_state
 {
@@ -147,6 +148,18 @@ static void on_frame(App* app)
     rhi_shader_bind(state->shader);
     rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
                       sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
+
+    // App/on_frame runs between imgui_layer_new_frame() and
+    // imgui_layer_render() (see App.c), so any ig*() calls here just work.
+    // Demo window to prove the wiring is correct -- swap this out for real
+    // panels once you're building your own UI.
+    // Fullscreen dockspace so ImGui windows (the demo window included) can
+    // actually be dragged and docked against something. dockspace_id=0
+    // auto-generates an ID; NULL viewport = the main viewport; no flags,
+    // no window-class restriction.
+    igDockSpaceOverViewport(0, NULL, ImGuiDockNodeFlags_PassthruCentralNode, NULL);
+
+    igShowDemoWindow(NULL);
 }
 
 int main(void)
