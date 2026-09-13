@@ -52,6 +52,11 @@ gl_proc_loader window_get_gl_loader(void)
     return (gl_proc_loader)glfwGetProcAddress;
 }
 
+GLFWwindow* window_get_native_handle(window* wind)
+{
+    return wind->handle;
+}
+
 void window_poll_events(void)
 {
     glfwPollEvents();

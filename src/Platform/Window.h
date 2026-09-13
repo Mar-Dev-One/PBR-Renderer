@@ -32,6 +32,11 @@ window* window_create(window_descriptor desc);
 
 gl_proc_loader window_get_gl_loader(void);
 
+// Raw GLFWwindow* handle. Needed by things that sit outside the RHI and
+// have to talk to GLFW directly (e.g. the ImGui GLFW backend). Everything
+// else should keep going through the window* API above.
+GLFWwindow* window_get_native_handle(window* wind);
+
 void window_poll_events(void);
 void window_swap_buffers(window* wind);
 
