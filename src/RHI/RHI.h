@@ -150,6 +150,17 @@ void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value);
 // render-target textures. Framebuffer attachments are created the same
 // way internally; rhi_framebuffer_get_color_texture just hands one back.
 rhi_texture rhi_texture_create(rhi_texture_desc desc);
+
+// Same as rhi_texture_create(), but decodes an image file from disk first
+// (PNG, JPG, BMP, TGA, ... via stb_image — see Core/Image.h). Always
+// decodes to 4 channels and uploads as RHI_FORMAT_RGBA8, regardless of
+// the source file's actual channel count, so callers don't need to know
+// the format up front. Returns NULL if the file can't be read/decoded.
+rhi_texture rhi_texture_create_from_file(const char* path,
+                                          rhi_texture_filter filter,
+                                          rhi_texture_wrap wrap,
+                                          b8 generate_mipmaps);
+
 void        rhi_texture_bind(rhi_texture texture, uint32 slot);
 void        rhi_texture_destroy(rhi_texture texture);
 
