@@ -2,6 +2,7 @@
 #include "RHI_Backend.h"
 
 #include "../Core/FileIO.h"
+#include "../Core/Image.h"
 
 #include "OpenGL/RHI_GL.h"
 // Add new backend headers here as new src/RHI/<Api>/ folders appear,
@@ -123,6 +124,32 @@ void rhi_texture_bind(rhi_texture texture, uint32 slot)
 rhi_texture rhi_texture_create(rhi_texture_desc desc)
 {
     return backend.texture_create(desc);
+}
+
+rhi_texture rhi_texture_create_from_file(const char* path,
+                                          rhi_texture_filter filter,
+                                          rhi_texture_wrap wrap,
+                                          b8 generate_mipmaps)
+{
+    image img = image_load(path, 4);
+    if (!img.pixels)
+        return NULL;
+
+    rhi_texture_desc desc = {
+        .width = img.width,
+        .height = img.height,
+        .format = RHI_FORMAT_RGBA8,
+        .filter = filter,
+        .wrap = wrap,
+        .pixels = img.pixels,
+        .generate_mipmaps = generate_mipmaps
+    };
+
+    rhi_texture texture = rhi_texture_create(desc);
+
+    image_free(&img);
+
+    return texture;
 }
 
 void rhi_texture_destroy(rhi_texture texture)

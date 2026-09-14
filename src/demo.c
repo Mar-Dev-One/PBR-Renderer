@@ -18,53 +18,55 @@
 
 typedef struct demo_state
 {
-    b8         initialized;
-    rhi_buffer vertex_buffer;
-    rhi_buffer index_buffer;
-    rhi_shader shader;
-    camera     cam;
+    b8          initialized;
+    rhi_buffer  vertex_buffer;
+    rhi_buffer  index_buffer;
+    rhi_shader  shader;
+    rhi_texture texture;
+    camera      cam;
 } demo_state;
 
-// Cube: position (vec3) + color (vec3) per vertex. Each face gets its own
-// 4 vertices (rather than sharing the 8 cube corners) so every face can
-// have a distinct flat color — sharing corners would blend colors across
-// faces since color is a per-vertex attribute, not a per-face one.
+// Cube: position (vec3) + uv (vec2) per vertex. Each face still gets its
+// own 4 vertices (rather than sharing the 8 cube corners) so every face
+// can have its own 0..1 UV range — sharing corners would smear a single
+// UV attribute across faces that should each tile the texture the same
+// way, since uv is per-vertex, not per-face.
 static const f32 CUBE_VERTICES[] = {
-    // Front face (+z) - red
-    -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
-     0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
-     0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
-    -0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+    // Front face (+z)
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f,  0.5f,  0.0f, 1.0f,
 
-    // Back face (-z) - green
-    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
-     0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
-     0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
-    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+    // Back face (-z)
+    -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f, -0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
 
-    // Left face (-x) - blue
-    -0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 1.0f,
-    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f,
-    -0.5f,  0.5f,  0.5f,  0.0f, 0.0f, 1.0f,
-    -0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,
+    // Left face (-x)
+    -0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
+    -0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+    -0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
 
-    // Right face (+x) - yellow
-     0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f,
-     0.5f, -0.5f,  0.5f,  1.0f, 1.0f, 0.0f,
-     0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,
-     0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,
+    // Right face (+x)
+     0.5f, -0.5f, -0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 1.0f,
+     0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
 
-    // Top face (+y) - cyan
-    -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 1.0f,
-     0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 1.0f,
-     0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 1.0f,
-    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 1.0f,
+    // Top face (+y)
+    -0.5f,  0.5f,  0.5f,  0.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  1.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f, 1.0f,
 
-    // Bottom face (-y) - magenta
-    -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,
-     0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,
-     0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,
-    -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,
+    // Bottom face (-y)
+    -0.5f, -0.5f,  0.5f,  0.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  1.0f, 0.0f,
+     0.5f, -0.5f, -0.5f,  1.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, 1.0f,
 };
 
 static const uint32 CUBE_INDICES[] = {
@@ -81,20 +83,20 @@ demo_init(demo_state* state, window_size framebuffer_size)
 {
     rhi_vertex_attribute attrs[] = {
         { .location = 0, .component_count = 3, .offset = 0 },
-        { .location = 1, .component_count = 3, .offset = 3 * sizeof(f32) },
+        { .location = 1, .component_count = 2, .offset = 3 * sizeof(f32) },
     };
 
     rhi_vertex_layout layout = {
         .attributes = attrs,
         .attribute_count = 2,
-        .stride = 6 * sizeof(f32)
+        .stride = 5 * sizeof(f32)
     };
 
     state->vertex_buffer = rhi_vertex_buffer_create(CUBE_VERTICES, sizeof(CUBE_VERTICES), &layout, RHI_USAGE_STATIC);
     state->index_buffer  = rhi_index_buffer_create(CUBE_INDICES, sizeof(CUBE_INDICES), RHI_USAGE_STATIC);
 
-    char* vertex_path   = asset_path("shaders/unlit.vert");
-    char* fragment_path = asset_path("shaders/unlit.frag");
+    char* vertex_path   = asset_path("shaders/textured.vert");
+    char* fragment_path = asset_path("shaders/textured.frag");
 
     state->shader = rhi_shader_create_from_files(vertex_path, fragment_path);
 
@@ -102,7 +104,24 @@ demo_init(demo_state* state, window_size framebuffer_size)
     free(fragment_path);
 
     if (!state->shader)
-        FATAL("demo: failed to load unlit shader");
+        FATAL("demo: failed to load textured shader");
+
+    char* texture_path = asset_path("textures/checker.png");
+
+    state->texture = rhi_texture_create_from_file(texture_path,
+                                                   RHI_FILTER_LINEAR,
+                                                   RHI_WRAP_REPEAT,
+                                                   /* generate_mipmaps */ true);
+
+    free(texture_path);
+
+    if (!state->texture)
+        FATAL("demo: failed to load checker texture");
+
+    // Sampler binding is fixed at texture unit 0 for the lifetime of the
+    // shader, so this only needs setting once here rather than every
+    // frame — only the actual texture bound to unit 0 changes per-draw.
+    rhi_shader_set_int(state->shader, "u_texture", 0);
 
     f32 aspect = (f32)framebuffer_size.width / (f32)framebuffer_size.height;
 
@@ -146,6 +165,7 @@ static void on_frame(App* app)
     rhi_shader_set_mat4(state->shader, "u_mvp", (const f32*)mvp);
 
     rhi_shader_bind(state->shader);
+    rhi_texture_bind(state->texture, 0);
     rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
                       sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
 
