@@ -18,7 +18,7 @@ add_subdirectory(deps/cglm)
 include(cmake/cimgui.cmake)
 
 add_executable(PBR_Renderer
-    src/demo.c
+    src/main.c
     src/App.c
     src/Core/FileIO.c
     src/Core/Paths.c
