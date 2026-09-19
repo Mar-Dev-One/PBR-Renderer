@@ -59,3 +59,9 @@ build/
 
 #program output files
 rhi_triangle_test_output.ppm
+
+#imgui
+imgui.ini
+
+#vscode
+.vs/
