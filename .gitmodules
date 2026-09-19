@@ -1,9 +1,9 @@
 [submodule "deps/glfw"]
-	path = deps/glfw
+	path = engine/deps/glfw
 	url = https://github.com/glfw/glfw.git
 [submodule "deps/cglm"]
-	path = deps/cglm
+	path = engine/deps/cglm
 	url = https://github.com/recp/cglm.git
 [submodule "deps/cimgui"]
-	path = deps/cimgui
+	path = engine/deps/cimgui
 	url = https://github.com/cimgui/cimgui.git
