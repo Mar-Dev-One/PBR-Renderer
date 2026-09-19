@@ -22,6 +22,7 @@ typedef struct window_size {
 typedef struct GLFWwindow GLFWwindow;
 typedef void (*key_callback)(GLFWwindow* window, int key, int scancode, int action, int mods);
 typedef void (*resize_callback)(GLFWwindow* window, int width, int height);
+typedef void (*scroll_callback)(GLFWwindow* window, double xoffset, double yoffset);
 
 // Generic GL proc-address loader, handed to the RHI backend so it can
 // resolve GL functions without RHI having to include GLFW itself.
@@ -59,6 +60,16 @@ void window_on_resized(window* wind, uint16 width, uint16 height);
 
 void window_set_key_callback(window* wind, key_callback callback);
 void window_set_resize_callback(window* wind, resize_callback callback);
+
+// NOTE: like the other setters, this replaces whatever callback is already
+// installed. Register before imgui_layer_init() so ImGui chains to it (see
+// App.c) rather than being replaced by it.
+void window_set_scroll_callback(window* wind, scroll_callback callback);
+
+// Polled input, for continuous things like drag-to-orbit where a callback
+// would just be re-accumulating state. `button` is a GLFW_MOUSE_BUTTON_* code.
+void window_get_cursor_pos(window* wind, f64* out_x, f64* out_y);
+b8   window_is_mouse_button_down(window* wind, int button);
 
 window_size window_get_size(window* wind);
 

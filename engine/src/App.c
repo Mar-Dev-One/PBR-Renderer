@@ -3,16 +3,39 @@
 #include "Renderer/Renderer.h"
 #include "UI/ImGuiLayer.h"
 
-static void keyboard_input_handler(GLFWwindow* window,
-                  int key,
-                  int scancode,
-                  int action,
-                  int mods)
+#include <GLFW/glfw3.h>
+
+// One App per process (there is one renderer and one window), and the
+// window's GLFW callbacks carry no user pointer, so they reach the App
+// through this. Owned here so applications never touch GLFW callbacks.
+static App* g_app = NULL;
+
+static void glfw_key_cb(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    printf("Key %d Action %d\n", key, action);
+    if (!g_app || !g_app->on_key)
+        return;
+
+    // Always forward releases: if ImGui grabbed focus between press and
+    // release, swallowing the release would leave the app thinking the key
+    // is still held.
+    if (action != GLFW_RELEASE && imgui_layer_wants_keyboard())
+        return;
+
+    g_app->on_key(g_app, key, action, mods);
 }
 
-static void on_resize(GLFWwindow* window, int width, int height)
+static void glfw_scroll_cb(GLFWwindow* window, double xoffset, double yoffset)
+{
+    if (!g_app || !g_app->on_scroll)
+        return;
+
+    if (imgui_layer_wants_mouse())
+        return;
+
+    g_app->on_scroll(g_app, xoffset, yoffset);
+}
+
+static void glfw_resize_cb(GLFWwindow* window, int width, int height)
 {
     renderer rend = get_renderer();
     // GLFW already resized the window (this callback IS the notification) —
@@ -21,11 +44,15 @@ static void on_resize(GLFWwindow* window, int width, int height)
     // inside GLFW's own resize callback.
     window_on_resized(rend->drawing_window, (uint16)width, (uint16)height);
     renderer_set_viewport(0, 0, (uint16)width, (uint16)height);
+
+    if (g_app && g_app->on_resize)
+        g_app->on_resize(g_app, (uint16)width, (uint16)height);
 }
 
 void run(App* app)
 {
-    
+    g_app = app;
+
     window_descriptor desc = {
         .title = app->name,
         .width = 800,
@@ -33,19 +60,33 @@ void run(App* app)
         .resizable = true,
         .vsync = true
     };
-    
+
     init_renderer(desc);
-    
+
     renderer rend = get_renderer();
 
-    window_set_key_callback(rend->drawing_window, keyboard_input_handler);
-    window_set_resize_callback(rend->drawing_window, on_resize);
+    // These MUST be registered before imgui_layer_init(). The ImGui GLFW
+    // backend saves whatever callback is already installed and chains to it
+    // (ImGui sees the event first, then ours). Registering after would
+    // replace ImGui's callback and break UI input.
+    window_set_key_callback(rend->drawing_window, glfw_key_cb);
+    window_set_scroll_callback(rend->drawing_window, glfw_scroll_cb);
+    window_set_resize_callback(rend->drawing_window, glfw_resize_cb);
 
     // ImGui needs a live GL context + GLFW window, so it can only be set
     // up after init_renderer() above has created both.
     imgui_layer_init(rend->drawing_window);
 
+    if (app->on_init)
+        app->on_init(app);
+
+    f64 last_time = window_get_time();
+
     while (!window_should_close(rend->drawing_window) && !app->should_close) {
+        f64 now = window_get_time();
+        f32 dt = (f32)(now - last_time);
+        last_time = now;
+
         renderer_begin_frame();
 
         renderer_clear(0.4f, 0.1f, 0.12f, 1.0f);
@@ -53,12 +94,7 @@ void run(App* app)
         imgui_layer_new_frame();
 
         if (app->on_frame)
-            app->on_frame(app);
-
-        LOG_INFO("width : %d, height %d\n", 
-            window_get_size(rend->drawing_window).width,
-            window_get_size(rend->drawing_window).height
-        );
+            app->on_frame(app, dt);
 
         // Draws on top of whatever on_frame just rendered, still before
         // the swap so it actually shows up on screen.
@@ -74,6 +110,13 @@ void run(App* app)
 
 void terminate(App* app)
 {
+    // The GL context is still alive here, so this is where the app frees
+    // its GPU resources.
+    if (app && app->on_shutdown)
+        app->on_shutdown(app);
+
     imgui_layer_shutdown();
     terminate_renderer();
+
+    g_app = NULL;
 }

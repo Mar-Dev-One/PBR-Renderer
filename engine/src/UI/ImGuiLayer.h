@@ -24,3 +24,10 @@ void imgui_layer_render(void);
 // own OS windows -- only does anything when ImGuiConfigFlags_ViewportsEnable
 // is set (see imgui_layer_init).
 void imgui_layer_render_platform_windows(void);
+
+// True when ImGui wants the keyboard / mouse this frame (a text box has
+// focus, the cursor is over a panel, ...). App.c uses these to keep
+// ImGui-claimed events away from the application's input hooks; polled
+// input (e.g. drag-to-orbit) should check wants_mouse itself.
+b8 imgui_layer_wants_keyboard(void);
+b8 imgui_layer_wants_mouse(void);

@@ -70,3 +70,13 @@ void imgui_layer_render_platform_windows(void)
     igRenderPlatformWindowsDefault(NULL, NULL);
     glfwMakeContextCurrent(backup_current_context);
 }
+
+b8 imgui_layer_wants_keyboard(void)
+{
+    return igGetIO_Nil()->WantCaptureKeyboard;
+}
+
+b8 imgui_layer_wants_mouse(void)
+{
+    return igGetIO_Nil()->WantCaptureMouse;
+}

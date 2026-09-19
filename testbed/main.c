@@ -14,6 +14,7 @@
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
 #include "Platform/Window.h"
+#include "UI/ImGuiLayer.h"
 #include "cimgui.h"
 
 #include <math.h>
@@ -38,7 +39,6 @@ static const char* TEXTURE_NAMES[] = {
 
 typedef struct demo_state
 {
-    b8          initialized;
     rhi_buffer  vertex_buffer;
     rhi_buffer  index_buffer;
     rhi_shader  shader;
@@ -57,18 +57,6 @@ typedef struct demo_state
     f64 last_cursor_y;
     b8  dragging;
 } demo_state;
-
-// GLFW's scroll input is callback-only (no glfwGetScroll to poll, unlike
-// the buttons/cursor that orbit_camera_update polls). ImGuiLayer.c calls
-// ImGui_ImplGlfw_InitForOpenGL(handle, true), so ImGui already owns
-// GLFWwindow's scroll callback; scroll_input_handler below replaces it and
-// manually chains to whatever ImGui installed, so UI scrolling (e.g.
-// scrolling inside a panel) keeps working. Both need file scope since the
-// GLFW callback signature leaves no room for a user_data parameter to
-// smuggle demo_state/the previous callback through another way, and this
-// demo only ever has one active instance.
-static demo_state*   g_demo_state          = NULL;
-static GLFWscrollfun g_prev_scroll_callback = NULL;
 
 // Cube: position (vec3) + uv (vec2) per vertex. Each face still gets its
 // own 4 vertices (rather than sharing the 8 cube corners) so every face
@@ -149,19 +137,16 @@ orbit_camera_apply(demo_state* state)
 
 // Polls the left mouse button + cursor delta and turns it into orbit_yaw /
 // orbit_pitch. Polling (rather than a glfwSetCursorPosCallback) keeps this
-// self-contained in the demo layer -- no changes needed to Window.h/App.c
-// -- and window_get_native_handle() already exists for exactly this kind
-// of "reach past the abstraction" case (see ImGuiLayer.c).
+// self-contained in the demo layer. Goes through the window_* input
+// wrappers rather than GLFW directly.
 static void
 orbit_camera_update(demo_state* state, window* wind)
 {
-    GLFWwindow* native = window_get_native_handle(wind);
+    f64 cursor_x, cursor_y;
+    window_get_cursor_pos(wind, &cursor_x, &cursor_y);
 
-    double cursor_x, cursor_y;
-    glfwGetCursorPos(native, &cursor_x, &cursor_y);
-
-    b8 lmb_down  = glfwGetMouseButton(native, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    b8 imgui_has_mouse = igGetIO_Nil()->WantCaptureMouse;
+    b8 lmb_down        = window_is_mouse_button_down(wind, GLFW_MOUSE_BUTTON_LEFT);
+    b8 imgui_has_mouse = imgui_layer_wants_mouse();
 
     if (lmb_down && !imgui_has_mouse)
     {
@@ -188,30 +173,30 @@ orbit_camera_update(demo_state* state, window* wind)
 }
 
 // Mouse-wheel zoom: shrinks/grows orbit_distance, clamped so you can't
-// zoom through the cube or scroll off into the distance forever.
+// zoom through the cube or scroll off into the distance forever. App.c only
+// calls this for scrolls ImGui didn't claim.
 static void
-scroll_input_handler(GLFWwindow* window, double xoffset, double yoffset)
+on_scroll(App* app, f64 dx, f64 dy)
 {
-    // Let ImGui see the scroll first (panel scrolling, combo boxes, etc.
-    // all rely on this) -- we're standing in for its own callback, not
-    // replacing what it does with it.
-    if (g_prev_scroll_callback)
-        g_prev_scroll_callback(window, xoffset, yoffset);
+    (void)dx;
 
-    if (!g_demo_state || igGetIO_Nil()->WantCaptureMouse)
-        return;
+    demo_state* state = (demo_state*)app->user_data;
 
     const f32 zoom_speed = 0.5f;
 
-    g_demo_state->orbit_distance -= (f32)yoffset * zoom_speed;
-    g_demo_state->orbit_distance  = clampf(g_demo_state->orbit_distance, 1.0f, 50.0f);
+    state->orbit_distance -= (f32)dy * zoom_speed;
+    state->orbit_distance  = clampf(state->orbit_distance, 1.0f, 50.0f);
 
-    orbit_camera_apply(g_demo_state);
+    orbit_camera_apply(state);
 }
 
+// Runs once from App.c's run(), after the GL context / RHI / ImGui exist.
 static void
-demo_init(demo_state* state, window_size framebuffer_size)
+on_init(App* app)
 {
+    demo_state* state = (demo_state*)app->user_data;
+    window_size framebuffer_size = window_get_size(get_renderer()->drawing_window);
+
     rhi_vertex_attribute attrs[] = {
         { .location = 0, .component_count = 3, .offset = 0 },
         { .location = 1, .component_count = 2, .offset = 3 * sizeof(f32) },
@@ -281,34 +266,35 @@ demo_init(demo_state* state, window_size framebuffer_size)
     state->orbit_yaw       = glm_deg(atan2f(offset[0], offset[2]));
     state->orbit_pitch     = glm_deg(asinf(offset[1] / state->orbit_distance));
     state->dragging        = false;
-
-    // Scroll-to-zoom. Registered here (once, lazily on first frame) rather
-    // than in App.c/Window.h, same reasoning as orbit_camera_update: this
-    // is demo-layer input handling, not something the platform/App layer
-    // needs to know about. g_prev_scroll_callback captures whatever
-    // ImGui_ImplGlfw_InitForOpenGL installed earlier in App.c, so it stays
-    // in the chain instead of getting silently dropped.
-    g_demo_state          = state;
-    g_prev_scroll_callback = glfwSetScrollCallback(window_get_native_handle(get_renderer()->drawing_window),
-                                                    scroll_input_handler);
-
-    state->initialized = true;
 }
 
-static void on_frame(App* app)
+// The GL viewport is already updated by App.c before this runs; the
+// projection matrix needs the same treatment or the cube will stretch.
+static void on_resize(App* app, uint16 width, uint16 height)
 {
     demo_state* state = (demo_state*)app->user_data;
+
+    // 0x0 while minimized -- would make the aspect NaN/inf.
+    if (width == 0 || height == 0)
+        return;
+
+    camera_set_aspect(&state->cam, (f32)width / (f32)height);
+}
+
+static void on_key(App* app, int key, int action, int mods)
+{
+    (void)mods;
+
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        app->should_close = true;
+}
+
+static void on_frame(App* app, f32 dt)
+{
+    (void)dt;
+
+    demo_state* state = (demo_state*)app->user_data;
     window*     wind  = get_renderer()->drawing_window;
-
-    if (!state->initialized)
-        demo_init(state, window_get_size(wind));
-
-    // Keep the camera's aspect ratio in sync with the window in case it was
-    // resized since the last frame (on_resize already re-points the GL
-    // viewport; the projection matrix needs the same treatment or the cube
-    // will stretch).
-    window_size size = window_get_size(wind);
-    camera_set_aspect(&state->cam, (f32)size.width / (f32)size.height);
 
     // Left-drag to orbit the camera around the cube. Must run after
     // imgui_layer_new_frame() (WantCaptureMouse needs this frame's ImGui
@@ -350,16 +336,34 @@ static void on_frame(App* app)
     igEnd();
 }
 
+// Runs from terminate(), before the GL context goes away.
+static void on_shutdown(App* app)
+{
+    demo_state* state = (demo_state*)app->user_data;
+
+    for (uint32 i = 0; i < TEXTURE_COUNT; ++i)
+        rhi_texture_destroy(state->textures[i]);
+
+    rhi_shader_destroy(state->shader);
+    rhi_buffer_destroy(state->index_buffer);
+    rhi_buffer_destroy(state->vertex_buffer);
+}
+
 int main(void)
 {
     // GPU resources (vertex/index buffers, shader) can only be created
-    // after RHI is initialized, which happens inside run() — so state
-    // starts uninitialized and demo_init() runs lazily on the first frame.
-    demo_state state = { .initialized = false };
+    // after RHI is initialized, which happens inside run() -- on_init
+    // creates them, on_shutdown destroys them.
+    demo_state state = { 0 };
 
     App app = {
         .name = "PBR Renderer - Cube Demo",
+        .on_init = on_init,
         .on_frame = on_frame,
+        .on_shutdown = on_shutdown,
+        .on_key = on_key,
+        .on_scroll = on_scroll,
+        .on_resize = on_resize,
         .user_data = &state,
         .should_close = false
     };

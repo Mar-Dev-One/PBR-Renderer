@@ -124,6 +124,21 @@ void window_set_resize_callback(window* wind, resize_callback callback)
     glfwSetFramebufferSizeCallback(wind->handle, callback);
 }
 
+void window_set_scroll_callback(window* wind, scroll_callback callback)
+{
+    glfwSetScrollCallback(wind->handle, callback);
+}
+
+void window_get_cursor_pos(window* wind, f64* out_x, f64* out_y)
+{
+    glfwGetCursorPos(wind->handle, out_x, out_y);
+}
+
+b8 window_is_mouse_button_down(window* wind, int button)
+{
+    return glfwGetMouseButton(wind->handle, button) == GLFW_PRESS;
+}
+
 
 
 void window_destroy(window* wind)
