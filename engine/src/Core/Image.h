@@ -25,4 +25,11 @@ typedef struct image
 // format, decode error) and logs why. Caller owns image.pixels on success
 // and must free it with image_free().
 image image_load(const char* path, uint8 desired_channels);
+
+// Same as image_load(), but decodes an image that's already in memory
+// (an embedded glTF/GLB texture, a network download, ...). `data` is the
+// still-encoded file contents (PNG/JPG bytes), not raw pixels. Same flip,
+// channel and failure behaviour as image_load().
+image image_load_from_memory(const uint8* data, uint64 size, uint8 desired_channels);
+
 void  image_free(image* img);

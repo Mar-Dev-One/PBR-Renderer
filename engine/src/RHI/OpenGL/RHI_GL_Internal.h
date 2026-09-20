@@ -38,6 +38,7 @@ b8   gl_init(rhi_proc_loader loader);
 void gl_shutdown(void);
 void gl_set_viewport(uint16 x, uint16 y, uint16 width, uint16 height);
 void gl_clear(f32 r, f32 g, f32 b, f32 a);
+void gl_set_render_state(rhi_render_state state);
 void gl_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
 
 // The most recent viewport passed to gl_set_viewport(). This is what the
@@ -64,6 +65,7 @@ void       gl_shader_bind(rhi_shader shader);
 void       gl_shader_destroy(rhi_shader shader);
 void       gl_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix);
 void       gl_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
+void       gl_shader_set_vec4(rhi_shader shader, const char* name, f32 x, f32 y, f32 z, f32 w);
 void       gl_shader_set_int(rhi_shader shader, const char* name, int32 value);
 void       gl_shader_set_float(rhi_shader shader, const char* name, f32 value);
 

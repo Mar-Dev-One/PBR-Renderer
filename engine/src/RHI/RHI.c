@@ -116,6 +116,11 @@ void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value)
     backend.shader_set_int(shader, name, value);
 }
 
+void rhi_shader_set_vec4(rhi_shader shader, const char* name, f32 x, f32 y, f32 z, f32 w)
+{
+    backend.shader_set_vec4(shader, name, x, y, z, w);
+}
+
 void rhi_shader_set_float(rhi_shader shader, const char* name, f32 value)
 {
     backend.shader_set_float(shader, name, value);
@@ -198,6 +203,16 @@ rhi_texture rhi_framebuffer_get_depth_texture(rhi_framebuffer framebuffer)
 void rhi_framebuffer_destroy(rhi_framebuffer framebuffer)
 {
     backend.framebuffer_destroy(framebuffer);
+}
+
+rhi_render_state rhi_render_state_default(void)
+{
+    return (rhi_render_state){ .cull_back_faces = true, .blend_enabled = false, .depth_write = true, .front_face_cw = false };
+}
+
+void rhi_set_render_state(rhi_render_state state)
+{
+    backend.set_render_state(state);
 }
 
 void rhi_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count)

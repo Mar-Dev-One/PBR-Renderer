@@ -38,6 +38,28 @@ static const char* TEXTURE_NAMES[] = {
 
 #define TEXTURE_COUNT (sizeof(TEXTURE_PATHS) / sizeof(TEXTURE_PATHS[0]))
 
+// Model picker: every model the GUI combo box can switch between. Format is
+// picked from the extension (.obj / .gltf / .glb) by model_load(). Add an
+// entry here (and drop the file in assets/models/) to make a new model
+// selectable -- nothing else needs to change. glTF models bring their own
+// materials and textures; the .obj files here have none, so they're drawn
+// with the tweakable default material.
+static const char* MODEL_PATHS[] = {
+    "models/Avocado.glb",
+    "models/BoxTextured.glb",
+    "models/suzanne.obj",
+    "models/sphere.obj",
+};
+
+static const char* MODEL_NAMES[] = {
+    "Avocado (glTF, PBR textures)",
+    "Textured Box (glTF)",
+    "Suzanne (OBJ)",
+    "Sphere (OBJ)",
+};
+
+#define MODEL_COUNT (sizeof(MODEL_PATHS) / sizeof(MODEL_PATHS[0]))
+
 // Which of the two demo scenes on_frame draws this frame -- both share the
 // same camera/orbit controls, only the geometry/shader/GUI panel differ.
 typedef enum render_mode
@@ -56,18 +78,27 @@ typedef struct demo_state
     int         selected_texture;   // index into textures[]/TEXTURE_NAMES, driven by the GUI combo box
     camera      cam;
 
-    // --- Model loading + basic lighting (RENDER_MODE_LIT_MODEL) ---------
-    // A loaded model drawn with a single Blinn-Phong directional light.
-    // Sliders below are exposed through ImGui so the lighting math is easy
-    // to see change live rather than only readable in the shader source.
-    model      lit_model;
-    rhi_shader lit_shader;
-    vec3       albedo;
+    // --- Model viewer (RENDER_MODE_LIT_MODEL) ----------------------------
+    // A loaded model (Scene/Model.h) drawn through the PBR shader with one
+    // directional light. Everything below is exposed through ImGui so the
+    // shading math is easy to see change live.
+    model      scene_model;
+    int        selected_model;     // index into MODEL_PATHS/MODEL_NAMES, driven by the GUI combo box
+    int        loaded_model;       // which entry scene_model was last loaded from (-1 = not yet); the load may have failed, see submesh_count
+    mat4       model_fit;          // centres + scales scene_model to a fixed on-screen size
+    rhi_shader pbr_shader;
+    b8         spin;
     vec3       light_dir;          // direction the light travels toward the surface; normalized before use
     vec3       light_color;
+    f32        light_intensity;
     f32        ambient_strength;
-    f32        specular_strength;
-    f32        shininess;
+    f32        exposure;
+
+    // Overrides for meshes the file gave no material (a bare .obj). Kept
+    // here rather than on the model so they survive switching models.
+    vec3       default_albedo;
+    f32        default_metallic;
+    f32        default_roughness;
 
     // Mouse-orbit camera control. The camera itself stays dumb (position +
     // target, per Camera.h) -- yaw/pitch/distance live here, in the layer
@@ -213,6 +244,34 @@ on_scroll(App* app, f64 dx, f64 dy)
     orbit_camera_apply(state);
 }
 
+// (Re)loads the model at MODEL_PATHS[index] into state->scene_model, freeing
+// whatever was there. Runs on the render thread with the GL context current,
+// which is all model_load() needs.
+static void
+load_selected_model(demo_state* state, int index)
+{
+    model_destroy(&state->scene_model);
+
+    char* path = asset_path(MODEL_PATHS[index]);
+    state->scene_model = model_load(path);
+    free(path);
+
+    // Recorded even when the load failed, so on_frame doesn't retry (and
+    // re-log the error) every single frame; the draw path checks
+    // submesh_count instead.
+    state->loaded_model = index;
+
+    if (state->scene_model.submesh_count == 0)
+    {
+        LOG_ERROR("demo: failed to load model '%s'\n", MODEL_PATHS[index]);
+        return;
+    }
+
+    // Assets come in wildly different units; fit everything into a ~2 unit
+    // box at the origin so the orbit camera framing works for all of them.
+    model_get_fit_transform(&state->scene_model, 2.0f, state->model_fit);
+}
+
 // Runs once from App.c's run(), after the GL context / RHI / ImGui exist.
 static void
 on_init(App* app)
@@ -267,33 +326,33 @@ on_init(App* app)
     // frame — only the actual texture bound to unit 0 changes per-draw.
     rhi_shader_set_int(state->shader, "u_texture", 0);
 
-    // --- Model loading + basic lighting setup ---------------------------
-    char* lit_vertex_path   = asset_path("shaders/lit.vert");
-    char* lit_fragment_path = asset_path("shaders/lit.frag");
+    // --- Model viewer setup ---------------------------------------------
+    char* pbr_vertex_path   = asset_path("shaders/pbr.vert");
+    char* pbr_fragment_path = asset_path("shaders/pbr.frag");
 
-    state->lit_shader = rhi_shader_create_from_files(lit_vertex_path, lit_fragment_path);
+    state->pbr_shader = rhi_shader_create_from_files(pbr_vertex_path, pbr_fragment_path);
 
-    free(lit_vertex_path);
-    free(lit_fragment_path);
+    free(pbr_vertex_path);
+    free(pbr_fragment_path);
 
-    if (!state->lit_shader)
-        FATAL("demo: failed to load lit shader");
-
-    char* model_path = asset_path("models/suzanne.obj");
-    state->lit_model  = model_load_obj(model_path);
-    free(model_path);
-
-    if (state->lit_model.submesh_count == 0)
-        FATAL("demo: failed to load lit demo model");
+    if (!state->pbr_shader)
+        FATAL("demo: failed to load PBR shader");
 
     state->mode = RENDER_MODE_LIT_MODEL;
 
-    glm_vec3_copy((vec3){ 0.9f, 0.3f, 0.25f }, state->albedo);
+    glm_vec3_copy((vec3){ 0.9f, 0.3f, 0.25f }, state->default_albedo);
+    state->default_metallic  = 0.0f;
+    state->default_roughness = 0.45f;
+
     glm_vec3_copy((vec3){ -0.4f, -0.6f, -0.5f }, state->light_dir);
-    glm_vec3_copy((vec3){ 1.0f, 1.0f, 1.0f }, state->light_color);
-    state->ambient_strength  = 0.12f;
-    state->specular_strength = 0.5f;
-    state->shininess         = 32.0f;
+    glm_vec3_copy((vec3){ 1.0f, 0.98f, 0.92f }, state->light_color);
+    state->light_intensity  = 2.5f;
+    state->ambient_strength = 0.5f;
+    state->exposure         = 1.0f;
+
+    state->selected_model = 0;
+    state->loaded_model   = -1;
+    load_selected_model(state, state->selected_model);
 
     f32 aspect = (f32)framebuffer_size.width / (f32)framebuffer_size.height;
 
@@ -375,42 +434,54 @@ static void on_frame(App* app, f32 dt)
     }
     else // RENDER_MODE_LIT_MODEL
     {
-        // Slow spin around Y so the lighting is visibly hitting a changing
-        // set of surface normals rather than a single static pose.
-        mat4 model;
-        glm_mat4_identity(model);
+        // A different model was picked in the GUI last frame.
+        if (state->selected_model != state->loaded_model)
+            load_selected_model(state, state->selected_model);
 
-        // Inverse-transpose of the model matrix: transforms normals
-        // correctly even under non-uniform scale (a plain model-matrix
-        // multiply would skew them). Uniform-scale-only here today, so
-        // this is a no-op in practice, but doing it properly means this
-        // demo doesn't quietly break the moment someone scales the model.
-        mat4 normal_matrix;
-        glm_mat4_copy(model, normal_matrix);
-        glm_mat4_inv(normal_matrix, normal_matrix);
-        glm_mat4_transpose(normal_matrix);
+        if (state->scene_model.submesh_count > 0)
+        {
+            // Push the GUI's default-material tweaks into the model; only
+            // meshes without their own material (bare .obj files) use it.
+            //
+            // The color picker shows (and the artist thinks in) sRGB, while
+            // material colors are linear -- convert, or the color comes out
+            // washed out.
+            material* dm = &state->scene_model.default_material;
+            dm->base_color[0] = powf(state->default_albedo[0], 2.2f);
+            dm->base_color[1] = powf(state->default_albedo[1], 2.2f);
+            dm->base_color[2] = powf(state->default_albedo[2], 2.2f);
+            dm->metallic      = state->default_metallic;
+            dm->roughness     = state->default_roughness;
 
-        vec3 light_dir_normalized;
-        glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
+            // world = Spin * Fit: centre and scale the model first, then rotate
+            // it about its own middle.
+            mat4 world;
+            glm_mat4_identity(world);
+            if (state->spin)
+                glm_rotate(world, time * 0.5f, (vec3){ 0.0f, 1.0f, 0.0f });
+            glm_mat4_mul(world, state->model_fit, world);
 
-        rhi_shader_set_mat4(state->lit_shader, "u_model", (const f32*)model);
-        rhi_shader_set_mat4(state->lit_shader, "u_view_projection", (const f32*)view_projection);
-        rhi_shader_set_mat4(state->lit_shader, "u_normal_matrix", (const f32*)normal_matrix);
-        rhi_shader_set_vec3(state->lit_shader, "u_albedo", state->albedo[0], state->albedo[1], state->albedo[2]);
-        rhi_shader_set_vec3(state->lit_shader, "u_light_dir",
-                             light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
-        rhi_shader_set_vec3(state->lit_shader, "u_light_color",
-                             state->light_color[0], state->light_color[1], state->light_color[2]);
-        rhi_shader_set_vec3(state->lit_shader, "u_view_pos",
-                             state->cam.position[0], state->cam.position[1], state->cam.position[2]);
-        rhi_shader_set_float(state->lit_shader, "u_ambient_strength", state->ambient_strength);
-        rhi_shader_set_float(state->lit_shader, "u_specular_strength", state->specular_strength);
-        rhi_shader_set_float(state->lit_shader, "u_shininess", state->shininess);
+            vec3 light_dir_normalized;
+            glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
 
-        rhi_shader_bind(state->lit_shader);
+            rhi_shader shader = state->pbr_shader;
 
-        for (uint32 i = 0; i < state->lit_model.submesh_count; ++i)
-            mesh_draw(&state->lit_model.submeshes[i].gpu_mesh);
+            rhi_shader_bind(shader);
+            rhi_shader_set_mat4(shader, "u_view_projection", (const f32*)view_projection);
+            rhi_shader_set_vec3(shader, "u_light_dir",
+                                 light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
+            rhi_shader_set_vec3(shader, "u_light_color",
+                                 state->light_color[0], state->light_color[1], state->light_color[2]);
+            rhi_shader_set_float(shader, "u_light_intensity", state->light_intensity);
+            rhi_shader_set_vec3(shader, "u_view_pos",
+                                 state->cam.position[0], state->cam.position[1], state->cam.position[2]);
+            rhi_shader_set_float(shader, "u_ambient_strength", state->ambient_strength);
+            rhi_shader_set_float(shader, "u_exposure", state->exposure);
+
+            // u_model / u_normal_matrix and every material uniform + texture
+            // binding are set per submesh inside model_draw().
+            model_draw(&state->scene_model, shader, world);
+        }
     }
 
     // App/on_frame runs between imgui_layer_new_frame() and
@@ -438,15 +509,35 @@ static void on_frame(App* app, f32 dt)
     }
     else // RENDER_MODE_LIT_MODEL
     {
-        // Every slider here is read straight out of state by the lighting
-        // block above -- no extra plumbing between "user drags a slider"
-        // and "the next frame's draw call uses it".
-        igColorEdit3("Albedo", state->albedo, 0);
+        igCombo_Str_arr("Model", &state->selected_model, MODEL_NAMES, (int)MODEL_COUNT, -1);
+
+        if (state->scene_model.submesh_count > 0)
+        {
+            const model* m = &state->scene_model;
+
+            igText("%u submeshes, %u materials, %u textures", m->submesh_count, m->material_count, m->texture_count);
+            igText("%u vertices, %u triangles", m->vertex_count, m->triangle_count);
+        }
+        else
+        {
+            igText("Model failed to load (see console)");
+        }
+
+        igCheckbox("Spin", &state->spin);
+        igSeparator();
+
+        igText("Light");
         igColorEdit3("Light Color", state->light_color, 0);
         igSliderFloat3("Light Direction", state->light_dir, -1.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Ambient", &state->ambient_strength, 0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Specular", &state->specular_strength, 0.0f, 2.0f, "%.2f", 0);
-        igSliderFloat("Shininess", &state->shininess, 1.0f, 256.0f, "%.0f", 0);
+        igSliderFloat("Light Intensity", &state->light_intensity, 0.0f, 10.0f, "%.2f", 0);
+        igSliderFloat("Ambient", &state->ambient_strength, 0.0f, 2.0f, "%.2f", 0);
+        igSliderFloat("Exposure", &state->exposure, 0.1f, 4.0f, "%.2f", 0);
+        igSeparator();
+
+        igText("Default material (models without one)");
+        igColorEdit3("Albedo", state->default_albedo, 0);
+        igSliderFloat("Metallic", &state->default_metallic, 0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Roughness", &state->default_roughness, 0.0f, 1.0f, "%.2f", 0);
     }
 
     igEnd();
@@ -459,6 +550,9 @@ static void on_shutdown(App* app)
 
     for (uint32 i = 0; i < TEXTURE_COUNT; ++i)
         rhi_texture_destroy(state->textures[i]);
+
+    model_destroy(&state->scene_model);
+    rhi_shader_destroy(state->pbr_shader);
 
     rhi_shader_destroy(state->shader);
     rhi_buffer_destroy(state->index_buffer);

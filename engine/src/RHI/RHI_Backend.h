@@ -29,6 +29,7 @@ typedef struct rhi_backend_api
     void       (*shader_destroy)(rhi_shader shader);
     void       (*shader_set_mat4)(rhi_shader shader, const char* name, const f32* matrix);
     void       (*shader_set_vec3)(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
+    void       (*shader_set_vec4)(rhi_shader shader, const char* name, f32 x, f32 y, f32 z, f32 w);
     void       (*shader_set_int)(rhi_shader shader, const char* name, int32 value);
     void       (*shader_set_float)(rhi_shader shader, const char* name, f32 value);
 
@@ -42,6 +43,8 @@ typedef struct rhi_backend_api
     rhi_texture     (*framebuffer_get_color_texture)(rhi_framebuffer framebuffer, uint32 index);
     rhi_texture     (*framebuffer_get_depth_texture)(rhi_framebuffer framebuffer);
     void            (*framebuffer_destroy)(rhi_framebuffer framebuffer);
+
+    void (*set_render_state)(rhi_render_state state);
 
     void (*draw_indexed)(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
 } rhi_backend_api;

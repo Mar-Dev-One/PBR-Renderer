@@ -1,6 +1,8 @@
 #include "Mesh.h"
 
+#include <math.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 mesh mesh_create(const mesh_vertex* vertices, uint32 vertex_count,
                   const uint32* indices, uint32 index_count)
@@ -9,11 +11,12 @@ mesh mesh_create(const mesh_vertex* vertices, uint32 vertex_count,
         { .location = 0, .component_count = 3, .offset = offsetof(mesh_vertex, position) },
         { .location = 1, .component_count = 3, .offset = offsetof(mesh_vertex, normal) },
         { .location = 2, .component_count = 2, .offset = offsetof(mesh_vertex, uv) },
+        { .location = 3, .component_count = 4, .offset = offsetof(mesh_vertex, tangent) },
     };
 
     rhi_vertex_layout layout = {
         .attributes = attrs,
-        .attribute_count = 3,
+        .attribute_count = 4,
         .stride = sizeof(mesh_vertex)
     };
 
@@ -23,8 +26,137 @@ mesh mesh_create(const mesh_vertex* vertices, uint32 vertex_count,
                                                 &layout, RHI_USAGE_STATIC);
     m.index_buffer  = rhi_index_buffer_create(indices, (uint64)index_count * sizeof(uint32), RHI_USAGE_STATIC);
     m.index_count   = index_count;
+    m.vertex_count  = vertex_count;
+
+    if (vertex_count > 0)
+    {
+        glm_vec3_copy((f32*)vertices[0].position, m.bounds_min);
+        glm_vec3_copy((f32*)vertices[0].position, m.bounds_max);
+
+        for (uint32 i = 1; i < vertex_count; ++i)
+        {
+            glm_vec3_minv(m.bounds_min, (f32*)vertices[i].position, m.bounds_min);
+            glm_vec3_maxv(m.bounds_max, (f32*)vertices[i].position, m.bounds_max);
+        }
+    }
 
     return m;
+}
+
+void mesh_compute_smooth_normals(mesh_vertex* vertices, uint32 vertex_count,
+                                  const uint32* indices, uint32 index_count)
+{
+    for (uint32 i = 0; i < vertex_count; ++i)
+        glm_vec3_zero(vertices[i].normal);
+
+    for (uint32 i = 0; i + 2 < index_count; i += 3)
+    {
+        mesh_vertex* v0 = &vertices[indices[i + 0]];
+        mesh_vertex* v1 = &vertices[indices[i + 1]];
+        mesh_vertex* v2 = &vertices[indices[i + 2]];
+
+        vec3 e1, e2, face_normal;
+        glm_vec3_sub(v1->position, v0->position, e1);
+        glm_vec3_sub(v2->position, v0->position, e2);
+
+        // Un-normalised cross product: its length is twice the triangle's
+        // area, so summing it directly gives area-weighted smoothing for free.
+        glm_vec3_cross(e1, e2, face_normal);
+
+        glm_vec3_add(v0->normal, face_normal, v0->normal);
+        glm_vec3_add(v1->normal, face_normal, v1->normal);
+        glm_vec3_add(v2->normal, face_normal, v2->normal);
+    }
+
+    for (uint32 i = 0; i < vertex_count; ++i)
+    {
+        if (glm_vec3_norm2(vertices[i].normal) > 1e-20f)
+            glm_vec3_normalize(vertices[i].normal);
+        else
+            glm_vec3_copy((vec3){ 0.0f, 1.0f, 0.0f }, vertices[i].normal);   // unreferenced / degenerate
+    }
+}
+
+void mesh_compute_tangents(mesh_vertex* vertices, uint32 vertex_count,
+                            const uint32* indices, uint32 index_count)
+{
+    // Two accumulators per vertex (tangent, bitangent), packed into one
+    // allocation: [0, n) tangents, [n, 2n) bitangents.
+    vec3* accum = calloc((uint64)vertex_count * 2, sizeof(vec3));
+    if (!accum)
+        FATAL("mesh_compute_tangents: out of memory");
+
+    vec3* tan_sum   = accum;
+    vec3* bitan_sum = accum + vertex_count;
+
+    for (uint32 i = 0; i + 2 < index_count; i += 3)
+    {
+        uint32 i0 = indices[i + 0], i1 = indices[i + 1], i2 = indices[i + 2];
+        const mesh_vertex* v0 = &vertices[i0];
+        const mesh_vertex* v1 = &vertices[i1];
+        const mesh_vertex* v2 = &vertices[i2];
+
+        vec3 e1, e2;
+        glm_vec3_sub((f32*)v1->position, (f32*)v0->position, e1);
+        glm_vec3_sub((f32*)v2->position, (f32*)v0->position, e2);
+
+        f32 du1 = v1->uv[0] - v0->uv[0], dv1 = v1->uv[1] - v0->uv[1];
+        f32 du2 = v2->uv[0] - v0->uv[0], dv2 = v2->uv[1] - v0->uv[1];
+
+        f32 det = du1 * dv2 - du2 * dv1;
+        if (fabsf(det) < 1e-12f)
+            continue;   // degenerate UV mapping for this triangle -- contributes nothing
+
+        f32 r = 1.0f / det;
+
+        vec3 t, b;
+        for (int k = 0; k < 3; ++k)
+        {
+            t[k] = (e1[k] * dv2 - e2[k] * dv1) * r;
+            b[k] = (e2[k] * du1 - e1[k] * du2) * r;
+        }
+
+        uint32 corner[3] = { i0, i1, i2 };
+        for (int c = 0; c < 3; ++c)
+        {
+            glm_vec3_add(tan_sum[corner[c]],   t, tan_sum[corner[c]]);
+            glm_vec3_add(bitan_sum[corner[c]], b, bitan_sum[corner[c]]);
+        }
+    }
+
+    for (uint32 i = 0; i < vertex_count; ++i)
+    {
+        mesh_vertex* v = &vertices[i];
+
+        // Gram-Schmidt: strip whatever part of the tangent lies along the
+        // normal so the (T, B, N) frame is orthogonal.
+        vec3 t;
+        glm_vec3_scale(v->normal, glm_vec3_dot(v->normal, tan_sum[i]), t);
+        glm_vec3_sub(tan_sum[i], t, t);
+
+        if (glm_vec3_norm2(t) < 1e-20f)
+        {
+            // No usable UV data: pick any vector perpendicular to the
+            // normal, starting from whichever world axis is least aligned.
+            vec3 axis = { 1.0f, 0.0f, 0.0f };
+            if (fabsf(v->normal[0]) > 0.9f)
+                glm_vec3_copy((vec3){ 0.0f, 1.0f, 0.0f }, axis);
+
+            glm_vec3_cross(v->normal, axis, t);
+        }
+
+        glm_vec3_normalize(t);
+
+        vec3 n_cross_t;
+        glm_vec3_cross(v->normal, t, n_cross_t);
+
+        v->tangent[0] = t[0];
+        v->tangent[1] = t[1];
+        v->tangent[2] = t[2];
+        v->tangent[3] = (glm_vec3_dot(n_cross_t, bitan_sum[i]) < 0.0f) ? -1.0f : 1.0f;
+    }
+
+    free(accum);
 }
 
 void mesh_draw(const mesh* m)

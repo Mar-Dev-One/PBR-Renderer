@@ -34,6 +34,32 @@ image image_load(const char* path, uint8 desired_channels)
     return img;
 }
 
+image image_load_from_memory(const uint8* data, uint64 size, uint8 desired_channels)
+{
+    image img = { 0 };
+
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, source_channels;
+    stbi_uc* pixels = stbi_load_from_memory((const stbi_uc*)data, (int)size,
+                                             &width, &height, &source_channels,
+                                             (int)desired_channels);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Could not decode in-memory image (%llu bytes): %s\n",
+                  (unsigned long long)size, stbi_failure_reason());
+        return img;
+    }
+
+    img.pixels = pixels;
+    img.width = (uint16)width;
+    img.height = (uint16)height;
+    img.channel_count = desired_channels ? desired_channels : (uint8)source_channels;
+
+    return img;
+}
+
 void image_free(image* img)
 {
     if (!img || !img->pixels)

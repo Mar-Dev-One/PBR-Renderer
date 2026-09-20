@@ -13,7 +13,10 @@ add_library(PBR_Engine STATIC
     src/Platform/Window.c
     src/Scene/Camera.c
     src/Scene/Mesh.c
+    src/Scene/Material.c
     src/Scene/Model.c
+    src/Scene/ModelObj.c
+    src/Scene/ModelGltf.c
     src/UI/ImGuiLayer.c
 )
 
@@ -44,12 +47,12 @@ target_link_libraries(PBR_Engine PUBLIC
     cimgui
 )
 
-# stb_image and fast_obj are single vendored headers (no CMakeLists of
-# their own, unlike the git-submodule deps above), needed only by
-# Core/Image.c and Scene/Model.c respectively -- both PRIVATE, same
-# reasoning as the ASSETS_ROOT definition below (implementation detail,
-# not something consumers of PBR_Engine need to see).
-target_include_directories(PBR_Engine PRIVATE deps/stb deps/fast_obj)
+# stb_image, fast_obj and cgltf are single vendored headers (no
+# CMakeLists of their own, unlike the git-submodule deps above), needed only
+# by Core/Image.c, Scene/ModelObj.c and Scene/ModelGltf.c respectively --
+# all PRIVATE, same reasoning as the ASSETS_ROOT definition below
+# (implementation detail, not something consumers of PBR_Engine need to see).
+target_include_directories(PBR_Engine PRIVATE deps/stb deps/fast_obj deps/cgltf)
 
 # PRIVATE: only Core/Paths.c reads this macro (asset_path() bakes it in at
 # runtime). testbed/main.c never references ASSETS_ROOT itself, so there's

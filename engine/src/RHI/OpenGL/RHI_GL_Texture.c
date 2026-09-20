@@ -20,6 +20,12 @@ gl_texture_format_info(rhi_texture_format format,
             *out_upload_type = GL_UNSIGNED_BYTE;
             return;
 
+        case RHI_FORMAT_RGBA8_SRGB:
+            *out_internal_format = GL_SRGB8_ALPHA8;
+            *out_upload_format = GL_RGBA;
+            *out_upload_type = GL_UNSIGNED_BYTE;
+            return;
+
         case RHI_FORMAT_RGBA16F:
             *out_internal_format = GL_RGBA16F;
             *out_upload_format = GL_RGBA;
@@ -49,7 +55,12 @@ gl_filter_to_gl(rhi_texture_filter filter, b8 has_mipmaps)
 static GLenum
 gl_wrap_to_gl(rhi_texture_wrap wrap)
 {
-    return (wrap == RHI_WRAP_REPEAT) ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+    switch (wrap)
+    {
+        case RHI_WRAP_REPEAT:          return GL_REPEAT;
+        case RHI_WRAP_MIRRORED_REPEAT: return GL_MIRRORED_REPEAT;
+        default:                       return GL_CLAMP_TO_EDGE;
+    }
 }
 
 rhi_texture gl_texture_create(rhi_texture_desc desc)

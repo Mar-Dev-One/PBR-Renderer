@@ -47,6 +47,24 @@ void gl_clear(f32 r, f32 g, f32 b, f32 a)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+void gl_set_render_state(rhi_render_state state)
+{
+    if (state.cull_back_faces) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+
+    if (state.blend_enabled)
+    {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    else
+    {
+        glDisable(GL_BLEND);
+    }
+
+    glDepthMask(state.depth_write ? GL_TRUE : GL_FALSE);
+    glFrontFace(state.front_face_cw ? GL_CW : GL_CCW);
+}
+
 void gl_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count)
 {
     glBindVertexArray(vertex_buffer->vao);
@@ -75,6 +93,7 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->shader_destroy = gl_shader_destroy;
     out_api->shader_set_mat4 = gl_shader_set_mat4;
     out_api->shader_set_vec3 = gl_shader_set_vec3;
+    out_api->shader_set_vec4 = gl_shader_set_vec4;
     out_api->shader_set_int = gl_shader_set_int;
     out_api->shader_set_float = gl_shader_set_float;
 
@@ -89,6 +108,7 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->framebuffer_get_depth_texture = gl_framebuffer_get_depth_texture;
     out_api->framebuffer_destroy = gl_framebuffer_destroy;
 
+    out_api->set_render_state = gl_set_render_state;
     out_api->draw_indexed = gl_draw_indexed;
 }
 

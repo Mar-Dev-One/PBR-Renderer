@@ -2,47 +2,99 @@
 
 #include "../Core/Defines.h"
 #include "Mesh.h"
+#include "Material.h"
 
-// One material group from the source file, already uploaded to the GPU.
-// Split by material (rather than merged into one draw call) so a render
-// pass can bind the right albedo/textures per submesh later -- today
-// nothing reads material_index yet (see testbed/main.c, which just draws
-// every submesh with one shared lit-shader material), but the split is
-// free at load time and expensive to retrofit afterwards.
+#include <cglm/cglm.h>
+
+// A loaded 3D model: GPU meshes, the materials and textures they use, and
+// a list of "submeshes" saying which mesh is drawn with which material at
+// which transform.
+//
+// The mesh/submesh split matters for glTF, where one mesh (a wheel, a
+// chair leg) is commonly placed many times by different scene nodes: the
+// geometry is uploaded once, and each placement is one lightweight
+// submesh entry. For .obj there is simply one mesh + one identity-transform
+// submesh per material.
+
 typedef struct model_submesh
 {
-    mesh  gpu_mesh;
-    int32 material_index;   // index into model::material_names, or -1 if the file had no materials
+    uint32 mesh_index;       // index into model::meshes
+    int32  material_index;   // index into model::materials, or -1 = model::default_material
+    mat4   transform;        // this placement's transform in model space (glTF node hierarchy, baked)
 } model_submesh;
 
 typedef struct model
 {
-    model_submesh* submeshes;
+    mesh*          meshes;          // owned GPU meshes
+    uint32         mesh_count;
+
+    model_submesh* submeshes;       // draw list
     uint32         submesh_count;
 
-    char**         material_names;   // material_count entries, heap-owned
+    material*      materials;       // owned
     uint32         material_count;
+
+    // Every texture any material uses, owned by the model and destroyed
+    // with it. Materials only borrow pointers into this pool.
+    rhi_texture*   textures;
+    uint32         texture_count;
+
+    // Used by submeshes with material_index == -1 (meshes the file gave no
+    // material to, e.g. a bare .obj). Public on purpose: an app can tweak
+    // it live (color, metallic, roughness) to preview a model.
+    material       default_material;
+
+    // Model-space bounds of everything drawn (transforms applied), plus
+    // totals for on-screen stats. Filled in by the loaders.
+    vec3   bounds_min;
+    vec3   bounds_max;
+    uint32 vertex_count;      // unique GPU vertices
+    uint32 triangle_count;    // triangles drawn per frame (instances counted every time)
 } model;
 
-// Loads a Wavefront .obj file (via the vendored fast_obj parser) and
-// uploads it as one or more GPU meshes, one per material used in the file
-// (a single implicit group if the file has no materials at all).
-//
-// Faces are fan-triangulated from their first corner, which is exact for
-// the convex/near-planar polygons .obj exporters produce and is what
-// fast_obj itself expects the caller to do. Vertices are not deduplicated
-// into a shared-vertex index buffer -- every face corner becomes its own
-// vertex, indexed 0..N-1 -- which is simiplicity over minimum GPU memory;
-// revisit if a loaded model is ever large enough for that to matter.
-//
-// Normals come from the file when present; a face with no normal data
-// falls back to a flat, per-face normal (computed from its first three
-// corners) so lighting still works, just faceted rather than smooth.
-//
-// Returns a zero-initialized model (submesh_count == 0) if the file can't
-// be read or parsed; check that before drawing.
+// Loads a model, picking the loader from the file extension:
+//   .obj          Wavefront OBJ (+ .mtl and its textures)
+//   .gltf / .glb  glTF 2.0 (external, embedded or binary buffers/textures)
+// Returns a zero-initialized model (submesh_count == 0) on failure -- log
+// output says why -- so callers check `submesh_count` before drawing.
+model model_load(const char* path);
+
+// Wavefront .obj (via the vendored fast_obj parser). Faces are
+// fan-triangulated; identical (position, uv, normal) corners are welded into
+// shared vertices; one submesh per material group. Kd/Ke/Ns/d and the
+// map_Kd / map_Ke textures become a metallic-roughness material (metallic 0,
+// roughness derived from Ns). Bump maps (map_bump) are not used -- .obj
+// doesn't say whether one is a height map or a normal map, so guessing
+// wrong would look worse than skipping. Use glTF for normal-mapped assets.
 model model_load_obj(const char* path);
 
-// Frees every submesh's GPU buffers and all CPU-side bookkeeping. Safe to
-// call on a zero-initialized/failed-load model.
+// glTF 2.0 (via the vendored cgltf parser), .gltf or .glb. Supports scene
+// hierarchies (node transforms are baked into submeshes), multiple
+// primitives per mesh, shared meshes, all five standard material textures,
+// embedded and external images, sampler wrap/filter modes, alpha
+// mask/blend, double-sided materials and emissive strength.
+// Not supported (loaded as static geometry / ignored): skinning and
+// animation (models appear in their bind pose), morph targets, sparse
+// accessors beyond what cgltf unpacks, Draco/meshopt compression,
+// KHR_texture_transform, and second UV sets.
+model model_load_gltf(const char* path);
+
+// Uniform-scale + translation that centres the model's bounds on the
+// origin and scales its largest dimension to `target_size`. Real-world
+// assets come in wildly different units (an avocado is 0.08 m wide, a
+// building 80 m), so apps that just want to *see* a model apply this as
+// the world matrix. `out` is a column-major mat4.
+void model_get_fit_transform(const model* m, f32 target_size, mat4 out);
+
+// Draws every submesh through `shader`, which must follow the uniform
+// contract in Material.h plus u_model / u_normal_matrix (the world matrix
+// and its inverse-transpose, set here per submesh). `world` is the whole
+// model's transform. The caller sets view-projection and lighting
+// uniforms and binds the shader first. Opaque and alpha-masked submeshes
+// draw first, blended ones after (not depth-sorted). Restores the default
+// render state when done.
+void model_draw(const model* m, rhi_shader shader, const mat4 world);
+
+// Frees every GPU resource and all CPU-side bookkeeping. Safe to call on a
+// zero-initialized/failed-load model.
 void model_destroy(model* m);

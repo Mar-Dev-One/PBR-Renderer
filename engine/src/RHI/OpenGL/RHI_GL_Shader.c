@@ -106,6 +106,15 @@ void gl_shader_set_int(rhi_shader shader, const char* name, int32 value)
     glProgramUniform1i(shader->program, location, value);
 }
 
+void gl_shader_set_vec4(rhi_shader shader, const char* name, f32 x, f32 y, f32 z, f32 w)
+{
+    GLint location = glGetUniformLocation(shader->program, name);
+    if (location < 0)
+        return;
+
+    glProgramUniform4f(shader->program, location, x, y, z, w);
+}
+
 void gl_shader_set_float(rhi_shader shader, const char* name, f32 value)
 {
     GLint location = glGetUniformLocation(shader->program, name);

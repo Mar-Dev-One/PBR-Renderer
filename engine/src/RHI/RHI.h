@@ -46,7 +46,10 @@ typedef struct rhi_shader_desc
 typedef enum rhi_texture_format
 {
     RHI_FORMAT_RGB8,       // 8-bit per channel, no alpha — most loaded color/albedo images
-    RHI_FORMAT_RGBA8,      // 8-bit per channel with alpha
+    RHI_FORMAT_RGBA8,      // 8-bit per channel with alpha (linear -- normal/roughness/data maps)
+    RHI_FORMAT_RGBA8_SRGB, // same layout, but the GPU treats the color channels as sRGB and converts
+                           // to linear on sample -- use for albedo/emissive images so lighting math
+                           // runs in linear space. Alpha stays linear.
     RHI_FORMAT_RGBA16F,    // HDR color (lighting accumulation, IBL, HDR framebuffers)
     RHI_FORMAT_DEPTH24     // depth attachment (shadow maps, depth pre-pass)
 } rhi_texture_format;
@@ -60,7 +63,8 @@ typedef enum rhi_texture_filter
 typedef enum rhi_texture_wrap
 {
     RHI_WRAP_REPEAT,
-    RHI_WRAP_CLAMP_TO_EDGE
+    RHI_WRAP_CLAMP_TO_EDGE,
+    RHI_WRAP_MIRRORED_REPEAT
 } rhi_texture_wrap;
 
 typedef struct rhi_texture_desc
@@ -142,6 +146,7 @@ void       rhi_shader_destroy(rhi_shader shader);
 // pass `(const f32*)&some_mat4[0][0]`).
 void rhi_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix);
 void rhi_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
+void rhi_shader_set_vec4(rhi_shader shader, const char* name, f32 x, f32 y, f32 z, f32 w);
 void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value);
 void rhi_shader_set_float(rhi_shader shader, const char* name, f32 value);
 
@@ -175,6 +180,21 @@ void            rhi_framebuffer_bind_default(void);
 rhi_texture     rhi_framebuffer_get_color_texture(rhi_framebuffer framebuffer, uint32 index);
 rhi_texture     rhi_framebuffer_get_depth_texture(rhi_framebuffer framebuffer);
 void            rhi_framebuffer_destroy(rhi_framebuffer framebuffer);
+
+// --- Render state --------------------------------------------------------
+// The handful of per-draw switches a material can change (glTF's
+// doubleSided / alphaMode, mainly). rhi_render_state_default() is what
+// rhi_init() leaves the device in: opaque, back-face culled, depth writes on.
+typedef struct rhi_render_state
+{
+    b8 cull_back_faces;   // false = draw both sides of every triangle (double-sided materials)
+    b8 blend_enabled;     // standard src-alpha / one-minus-src-alpha blending
+    b8 depth_write;       // blended geometry usually turns this off so it doesn't occlude what's behind it
+    b8 front_face_cw;     // true = clockwise winding is the front face (mirrored / negative-scale transforms flip winding)
+} rhi_render_state;
+
+rhi_render_state rhi_render_state_default(void);
+void             rhi_set_render_state(rhi_render_state state);
 
 // --- Drawing ------------------------------------------------------------
 void rhi_draw_indexed(rhi_buffer vertex_buffer, rhi_buffer index_buffer, uint32 index_count);
