@@ -5,6 +5,11 @@
 *.o
 *.ko
 *.obj
+
+# Exception: Wavefront .obj model assets (used by Scene/Model.h), not
+# Windows object files -- the blanket *.obj rule above is for the latter.
+!assets/models/*.obj
+
 *.elf
 
 # Linker output

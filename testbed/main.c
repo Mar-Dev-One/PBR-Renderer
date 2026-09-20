@@ -13,6 +13,7 @@
 #include "RHI/RHI.h"
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
+#include "Scene/Model.h"
 #include "Platform/Window.h"
 #include "UI/ImGuiLayer.h"
 #include "cimgui.h"
@@ -37,14 +38,36 @@ static const char* TEXTURE_NAMES[] = {
 
 #define TEXTURE_COUNT (sizeof(TEXTURE_PATHS) / sizeof(TEXTURE_PATHS[0]))
 
+// Which of the two demo scenes on_frame draws this frame -- both share the
+// same camera/orbit controls, only the geometry/shader/GUI panel differ.
+typedef enum render_mode
+{
+    RENDER_MODE_TEXTURED_CUBE,
+    RENDER_MODE_LIT_MODEL
+} render_mode;
+
 typedef struct demo_state
 {
+    render_mode mode;
     rhi_buffer  vertex_buffer;
     rhi_buffer  index_buffer;
     rhi_shader  shader;
     rhi_texture textures[TEXTURE_COUNT];
     int         selected_texture;   // index into textures[]/TEXTURE_NAMES, driven by the GUI combo box
     camera      cam;
+
+    // --- Model loading + basic lighting (RENDER_MODE_LIT_MODEL) ---------
+    // A loaded model drawn with a single Blinn-Phong directional light.
+    // Sliders below are exposed through ImGui so the lighting math is easy
+    // to see change live rather than only readable in the shader source.
+    model      lit_model;
+    rhi_shader lit_shader;
+    vec3       albedo;
+    vec3       light_dir;          // direction the light travels toward the surface; normalized before use
+    vec3       light_color;
+    f32        ambient_strength;
+    f32        specular_strength;
+    f32        shininess;
 
     // Mouse-orbit camera control. The camera itself stays dumb (position +
     // target, per Camera.h) -- yaw/pitch/distance live here, in the layer
@@ -244,6 +267,34 @@ on_init(App* app)
     // frame — only the actual texture bound to unit 0 changes per-draw.
     rhi_shader_set_int(state->shader, "u_texture", 0);
 
+    // --- Model loading + basic lighting setup ---------------------------
+    char* lit_vertex_path   = asset_path("shaders/lit.vert");
+    char* lit_fragment_path = asset_path("shaders/lit.frag");
+
+    state->lit_shader = rhi_shader_create_from_files(lit_vertex_path, lit_fragment_path);
+
+    free(lit_vertex_path);
+    free(lit_fragment_path);
+
+    if (!state->lit_shader)
+        FATAL("demo: failed to load lit shader");
+
+    char* model_path = asset_path("models/suzanne.obj");
+    state->lit_model  = model_load_obj(model_path);
+    free(model_path);
+
+    if (state->lit_model.submesh_count == 0)
+        FATAL("demo: failed to load lit demo model");
+
+    state->mode = RENDER_MODE_LIT_MODEL;
+
+    glm_vec3_copy((vec3){ 0.9f, 0.3f, 0.25f }, state->albedo);
+    glm_vec3_copy((vec3){ -0.4f, -0.6f, -0.5f }, state->light_dir);
+    glm_vec3_copy((vec3){ 1.0f, 1.0f, 1.0f }, state->light_color);
+    state->ambient_strength  = 0.12f;
+    state->specular_strength = 0.5f;
+    state->shininess         = 32.0f;
+
     f32 aspect = (f32)framebuffer_size.width / (f32)framebuffer_size.height;
 
     vec3 initial_position = { 2.5f, 2.0f, 3.5f };
@@ -303,36 +354,101 @@ static void on_frame(App* app, f32 dt)
 
     f32 time = (f32)window_get_time();
 
-    mat4 model;
-    glm_mat4_identity(model);
-    glm_rotate(model, time, (vec3){ 0.3f, 1.0f, 0.2f });
-
     mat4 view_projection;
     camera_get_view_projection(&state->cam, view_projection);
 
-    mat4 mvp;
-    glm_mat4_mul(view_projection, model, mvp);
+    if (state->mode == RENDER_MODE_TEXTURED_CUBE)
+    {
+        mat4 model;
+        glm_mat4_identity(model);
+        glm_rotate(model, time, (vec3){ 0.3f, 1.0f, 0.2f });
 
-    rhi_shader_set_mat4(state->shader, "u_mvp", (const f32*)mvp);
+        mat4 mvp;
+        glm_mat4_mul(view_projection, model, mvp);
 
-    rhi_shader_bind(state->shader);
-    rhi_texture_bind(state->textures[state->selected_texture], 0);
-    rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
-                      sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
+        rhi_shader_set_mat4(state->shader, "u_mvp", (const f32*)mvp);
+
+        rhi_shader_bind(state->shader);
+        rhi_texture_bind(state->textures[state->selected_texture], 0);
+        rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
+                          sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
+    }
+    else // RENDER_MODE_LIT_MODEL
+    {
+        // Slow spin around Y so the lighting is visibly hitting a changing
+        // set of surface normals rather than a single static pose.
+        mat4 model;
+        glm_mat4_identity(model);
+
+        // Inverse-transpose of the model matrix: transforms normals
+        // correctly even under non-uniform scale (a plain model-matrix
+        // multiply would skew them). Uniform-scale-only here today, so
+        // this is a no-op in practice, but doing it properly means this
+        // demo doesn't quietly break the moment someone scales the model.
+        mat4 normal_matrix;
+        glm_mat4_copy(model, normal_matrix);
+        glm_mat4_inv(normal_matrix, normal_matrix);
+        glm_mat4_transpose(normal_matrix);
+
+        vec3 light_dir_normalized;
+        glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
+
+        rhi_shader_set_mat4(state->lit_shader, "u_model", (const f32*)model);
+        rhi_shader_set_mat4(state->lit_shader, "u_view_projection", (const f32*)view_projection);
+        rhi_shader_set_mat4(state->lit_shader, "u_normal_matrix", (const f32*)normal_matrix);
+        rhi_shader_set_vec3(state->lit_shader, "u_albedo", state->albedo[0], state->albedo[1], state->albedo[2]);
+        rhi_shader_set_vec3(state->lit_shader, "u_light_dir",
+                             light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
+        rhi_shader_set_vec3(state->lit_shader, "u_light_color",
+                             state->light_color[0], state->light_color[1], state->light_color[2]);
+        rhi_shader_set_vec3(state->lit_shader, "u_view_pos",
+                             state->cam.position[0], state->cam.position[1], state->cam.position[2]);
+        rhi_shader_set_float(state->lit_shader, "u_ambient_strength", state->ambient_strength);
+        rhi_shader_set_float(state->lit_shader, "u_specular_strength", state->specular_strength);
+        rhi_shader_set_float(state->lit_shader, "u_shininess", state->shininess);
+
+        rhi_shader_bind(state->lit_shader);
+
+        for (uint32 i = 0; i < state->lit_model.submesh_count; ++i)
+            mesh_draw(&state->lit_model.submeshes[i].gpu_mesh);
+    }
 
     // App/on_frame runs between imgui_layer_new_frame() and
     // imgui_layer_render() (see App.c), so any ig*() calls here just work.
-    // Fullscreen dockspace so ImGui windows (the texture picker included)
-    // can actually be dragged and docked against something. dockspace_id=0
-    // auto-generates an ID; NULL viewport = the main viewport; no flags,
-    // no window-class restriction.
+    // Fullscreen dockspace so ImGui windows can actually be dragged and
+    // docked against something. dockspace_id=0 auto-generates an ID; NULL
+    // viewport = the main viewport; no flags, no window-class restriction.
     igDockSpaceOverViewport(0, NULL, ImGuiDockNodeFlags_PassthruCentralNode, NULL);
 
-    // Texture picker: a combo box bound directly to selected_texture, which
-    // is what the draw call above reads every frame -- no extra plumbing
-    // needed between "user picks an entry" and "the cube shows it".
-    igBegin("Texture", NULL, 0);
-    igCombo_Str_arr("Texture", &state->selected_texture, TEXTURE_NAMES, (int)TEXTURE_COUNT, -1);
+    igBegin("Scene", NULL, 0);
+
+    igText("Render Mode");
+    igRadioButton_IntPtr("Textured Cube", (int*)&state->mode, RENDER_MODE_TEXTURED_CUBE);
+    igSameLine(0.0f, -1.0f);
+    igRadioButton_IntPtr("Lit Model", (int*)&state->mode, RENDER_MODE_LIT_MODEL);
+    igSeparator();
+
+    if (state->mode == RENDER_MODE_TEXTURED_CUBE)
+    {
+        // Texture picker: a combo box bound directly to selected_texture,
+        // which is what the draw call above reads every frame -- no extra
+        // plumbing needed between "user picks an entry" and "the cube
+        // shows it".
+        igCombo_Str_arr("Texture", &state->selected_texture, TEXTURE_NAMES, (int)TEXTURE_COUNT, -1);
+    }
+    else // RENDER_MODE_LIT_MODEL
+    {
+        // Every slider here is read straight out of state by the lighting
+        // block above -- no extra plumbing between "user drags a slider"
+        // and "the next frame's draw call uses it".
+        igColorEdit3("Albedo", state->albedo, 0);
+        igColorEdit3("Light Color", state->light_color, 0);
+        igSliderFloat3("Light Direction", state->light_dir, -1.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Ambient", &state->ambient_strength, 0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Specular", &state->specular_strength, 0.0f, 2.0f, "%.2f", 0);
+        igSliderFloat("Shininess", &state->shininess, 1.0f, 256.0f, "%.0f", 0);
+    }
+
     igEnd();
 }
 

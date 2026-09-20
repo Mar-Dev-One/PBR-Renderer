@@ -143,6 +143,7 @@ void       rhi_shader_destroy(rhi_shader shader);
 void rhi_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix);
 void rhi_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
 void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value);
+void rhi_shader_set_float(rhi_shader shader, const char* name, f32 value);
 
 // --- Textures ----------------------------------------------------------
 // Standalone textures — loaded image data (albedo/normal/roughness maps,

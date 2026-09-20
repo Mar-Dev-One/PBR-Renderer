@@ -76,6 +76,7 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->shader_set_mat4 = gl_shader_set_mat4;
     out_api->shader_set_vec3 = gl_shader_set_vec3;
     out_api->shader_set_int = gl_shader_set_int;
+    out_api->shader_set_float = gl_shader_set_float;
 
     out_api->texture_bind = gl_texture_bind;
     out_api->texture_create = gl_texture_create;

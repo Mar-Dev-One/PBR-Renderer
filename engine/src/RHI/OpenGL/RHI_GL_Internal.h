@@ -65,6 +65,7 @@ void       gl_shader_destroy(rhi_shader shader);
 void       gl_shader_set_mat4(rhi_shader shader, const char* name, const f32* matrix);
 void       gl_shader_set_vec3(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
 void       gl_shader_set_int(rhi_shader shader, const char* name, int32 value);
+void       gl_shader_set_float(rhi_shader shader, const char* name, f32 value);
 
 // --- RHI_GL_Texture.c ---------------------------------------------------
 rhi_texture gl_texture_create(rhi_texture_desc desc);

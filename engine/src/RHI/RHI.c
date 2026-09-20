@@ -116,6 +116,11 @@ void rhi_shader_set_int(rhi_shader shader, const char* name, int32 value)
     backend.shader_set_int(shader, name, value);
 }
 
+void rhi_shader_set_float(rhi_shader shader, const char* name, f32 value)
+{
+    backend.shader_set_float(shader, name, value);
+}
+
 void rhi_texture_bind(rhi_texture texture, uint32 slot)
 {
     backend.texture_bind(texture, slot);

@@ -30,6 +30,7 @@ typedef struct rhi_backend_api
     void       (*shader_set_mat4)(rhi_shader shader, const char* name, const f32* matrix);
     void       (*shader_set_vec3)(rhi_shader shader, const char* name, f32 x, f32 y, f32 z);
     void       (*shader_set_int)(rhi_shader shader, const char* name, int32 value);
+    void       (*shader_set_float)(rhi_shader shader, const char* name, f32 value);
 
     void (*texture_bind)(rhi_texture texture, uint32 slot);
     rhi_texture (*texture_create)(rhi_texture_desc desc);
