@@ -104,12 +104,21 @@ log_message(log_level level,
         ? stderr
         : stdout;
 
-    fprintf(stream,
+    if (level == LOG_LEVEL_TRACE || level == LOG_LEVEL_INFO) {
+        fprintf(stream,
+            "%s[%s] : ",
+            colors[level],
+            names[level]
+        );
+    }else {
+        fprintf(stream,
             "%s[%s] %s:%d: ",
             colors[level],
             names[level],
             file,
             line);
+    }
+
 
     va_list args;
     va_start(args, fmt);
@@ -124,11 +133,11 @@ log_message(log_level level,
 #define LOG_TRACE(...) \
     log_message(LOG_LEVEL_TRACE, "", 0, __VA_ARGS__)
 
-#define LOG_DEBUG(...) \
-    log_message(LOG_LEVEL_DEBUG, "", 0, __VA_ARGS__)
-
 #define LOG_INFO(...) \
     log_message(LOG_LEVEL_INFO, "", 0, __VA_ARGS__)
+
+#define LOG_DEBUG(...) \
+    log_message(LOG_LEVEL_DEBUG, __FILE__, __LINE__ , __VA_ARGS__)
 
 #define LOG_WARN(...) \
     log_message(LOG_LEVEL_WARN, __FILE__, __LINE__, __VA_ARGS__)

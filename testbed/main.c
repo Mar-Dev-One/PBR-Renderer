@@ -49,6 +49,8 @@ static const char* MODEL_PATHS[] = {
     "models/BoxTextured.glb",
     "models/suzanne.obj",
     "models/sphere.obj",
+    "models/lord_krishna_statue_3d_model_free.glb",
+    "models/bulky_knight.glb"
 };
 
 static const char* MODEL_NAMES[] = {
@@ -56,6 +58,8 @@ static const char* MODEL_NAMES[] = {
     "Textured Box (glTF)",
     "Suzanne (OBJ)",
     "Sphere (OBJ)",
+    "krishna (glTF)",
+    "bulky_knight (glTF)"
 };
 
 #define MODEL_COUNT (sizeof(MODEL_PATHS) / sizeof(MODEL_PATHS[0]))

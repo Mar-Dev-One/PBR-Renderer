@@ -70,3 +70,6 @@ imgui.ini
 
 #vscode
 .vs/
+
+#models
+assets/models/
