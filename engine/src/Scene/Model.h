@@ -95,6 +95,17 @@ void model_get_fit_transform(const model* m, f32 target_size, mat4 out);
 // render state when done.
 void model_draw(const model* m, rhi_shader shader, const mat4 world);
 
+// Depth-only pass for shadow mapping: draws every opaque/alpha-masked
+// submesh (blended ones are skipped, same as model_draw()'s first pass --
+// casting a shadow from something translucent would need its alpha, which
+// this simple pass doesn't sample) into whatever depth-only framebuffer is
+// currently bound, from the light's point of view. `shader` only needs to
+// follow shadow_depth.vert's tiny uniform contract: u_model and
+// u_light_view_projection; no material binding happens here; the caller
+// binds `shader` and the target framebuffer first. Restores the default
+// render state when done.
+void model_draw_depth(const model* m, rhi_shader shader, const mat4 world, const mat4 light_view_projection);
+
 // Frees every GPU resource and all CPU-side bookkeeping. Safe to call on a
 // zero-initialized/failed-load model.
 void model_destroy(model* m);

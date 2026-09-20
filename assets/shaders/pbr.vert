@@ -10,10 +10,12 @@ out vec3 v_world_pos;
 out vec3 v_normal;
 out vec4 v_tangent;
 out vec2 v_uv;
+out vec4 v_light_space_pos;
 
 uniform mat4 u_model;
 uniform mat4 u_view_projection;
-uniform mat4 u_normal_matrix;   // inverse-transpose of u_model; only the upper 3x3 is read
+uniform mat4 u_normal_matrix;          // inverse-transpose of u_model; only the upper 3x3 is read
+uniform mat4 u_light_view_projection;  // same light camera model_draw_depth() rendered the shadow map with
 
 void main()
 {
@@ -26,6 +28,10 @@ void main()
     // model matrix itself (not the inverse-transpose that normals need).
     v_tangent   = vec4(mat3(u_model) * in_tangent.xyz, in_tangent.w);
     v_uv        = in_uv;
+
+    // Where this vertex lands in the shadow map, interpolated per-fragment
+    // and turned into a shadow test in pbr.frag.
+    v_light_space_pos = u_light_view_projection * world_pos;
 
     gl_Position = u_view_projection * world_pos;
 }

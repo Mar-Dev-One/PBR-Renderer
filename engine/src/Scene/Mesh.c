@@ -43,6 +43,72 @@ mesh mesh_create(const mesh_vertex* vertices, uint32 vertex_count,
     return m;
 }
 
+mesh mesh_create_uv_sphere(uint32 segments, uint32 rings)
+{
+    if (segments < 3) segments = 3;
+    if (rings < 2)    rings = 2;
+
+    uint32 vertex_count = (segments + 1) * (rings + 1);   // +1 column duplicates the seam so UVs can wrap 0 -> 1
+    uint32 index_count  = segments * rings * 6;
+
+    mesh_vertex* vertices = malloc((uint64)vertex_count * sizeof(mesh_vertex));
+    uint32*      indices  = malloc((uint64)index_count * sizeof(uint32));
+    if (!vertices || !indices)
+        FATAL("mesh_create_uv_sphere: out of memory");
+
+    uint32 v = 0;
+    for (uint32 r = 0; r <= rings; ++r)
+    {
+        f32 theta = GLM_PIf * (f32)r / (f32)rings;   // 0 at the +Y pole, pi at -Y
+        f32 sin_t = sinf(theta), cos_t = cosf(theta);
+
+        for (uint32 s = 0; s <= segments; ++s)
+        {
+            f32 phi = 2.0f * GLM_PIf * (f32)s / (f32)segments;
+            f32 sin_p = sinf(phi), cos_p = cosf(phi);
+
+            mesh_vertex* vert = &vertices[v++];
+
+            // On a unit sphere the position *is* the normal.
+            vert->position[0] = vert->normal[0] = sin_t * cos_p;
+            vert->position[1] = vert->normal[1] = cos_t;
+            vert->position[2] = vert->normal[2] = sin_t * sin_p;
+
+            // Bottom-left UV origin: v = 0 at the south pole.
+            vert->uv[0] = (f32)s / (f32)segments;
+            vert->uv[1] = 1.0f - (f32)r / (f32)rings;
+
+            // d(position)/d(phi), i.e. the direction of increasing u.
+            // Exactly (0,0,0) at the poles, so fall back to the value it
+            // approaches just off the pole.
+            vert->tangent[0] = -sin_p;
+            vert->tangent[1] = 0.0f;
+            vert->tangent[2] = cos_p;
+            vert->tangent[3] = 1.0f;
+        }
+    }
+
+    uint32 i = 0;
+    for (uint32 r = 0; r < rings; ++r)
+    {
+        for (uint32 s = 0; s < segments; ++s)
+        {
+            uint32 a = r * (segments + 1) + s;   // this ring
+            uint32 b = a + segments + 1;         // the ring below
+
+            // Counter-clockwise when seen from outside the sphere.
+            indices[i++] = a;  indices[i++] = a + 1;  indices[i++] = b + 1;
+            indices[i++] = a;  indices[i++] = b + 1;  indices[i++] = b;
+        }
+    }
+
+    mesh m = mesh_create(vertices, vertex_count, indices, index_count);
+
+    free(vertices);
+    free(indices);
+    return m;
+}
+
 void mesh_compute_smooth_normals(mesh_vertex* vertices, uint32 vertex_count,
                                   const uint32* indices, uint32 index_count)
 {

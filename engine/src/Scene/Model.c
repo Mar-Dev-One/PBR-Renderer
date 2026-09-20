@@ -233,6 +233,37 @@ void model_draw(const model* m, rhi_shader shader, const mat4 world)
     rhi_set_render_state(rhi_render_state_default());
 }
 
+void model_draw_depth(const model* m, rhi_shader shader, const mat4 world, const mat4 light_view_projection)
+{
+    for (uint32 i = 0; i < m->submesh_count; ++i)
+    {
+        const model_submesh* sub = &m->submeshes[i];
+        const material* mat = sub->material_index >= 0
+            ? &m->materials[sub->material_index]
+            : &m->default_material;
+
+        if (mat->alpha_mode == MATERIAL_ALPHA_BLEND)
+            continue;
+
+        mat4 model_matrix;
+        glm_mat4_mul((vec4*)world, (vec4*)sub->transform, model_matrix);
+
+        rhi_shader_set_mat4(shader, "u_model", (const f32*)model_matrix);
+        rhi_shader_set_mat4(shader, "u_light_view_projection", (const f32*)light_view_projection);
+
+        // Still respect double-sided / mirrored-transform winding here --
+        // culling the wrong faces would punch holes in the shadow.
+        rhi_render_state state = rhi_render_state_default();
+        state.cull_back_faces = !mat->double_sided;
+        state.front_face_cw   = glm_mat4_det(model_matrix) < 0.0f;
+        rhi_set_render_state(state);
+
+        mesh_draw(&m->meshes[sub->mesh_index]);
+    }
+
+    rhi_set_render_state(rhi_render_state_default());
+}
+
 void model_destroy(model* m)
 {
     if (!m)

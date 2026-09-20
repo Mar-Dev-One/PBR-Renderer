@@ -60,6 +60,10 @@ static const char* MODEL_NAMES[] = {
 
 #define MODEL_COUNT (sizeof(MODEL_PATHS) / sizeof(MODEL_PATHS[0]))
 
+// Resolution of the directional light's shadow map. A depth-only
+// framebuffer, so this is cheap to size generously.
+#define SHADOW_MAP_SIZE 2048
+
 // Which of the two demo scenes on_frame draws this frame -- both share the
 // same camera/orbit controls, only the geometry/shader/GUI panel differ.
 typedef enum render_mode
@@ -93,6 +97,24 @@ typedef struct demo_state
     f32        light_intensity;
     f32        ambient_strength;
     f32        exposure;
+
+    // --- Shadow mapping ----------------------------------------------------
+    // A single directional-light shadow map, re-rendered every frame from
+    // model_draw_depth() before the lit pass (light_dir can change live via
+    // the GUI, so the light camera can't be baked once at load time).
+    rhi_shader      shadow_shader;
+    rhi_framebuffer shadow_map;
+    mat4            light_view_projection;   // light's view * projection, recomputed each frame
+
+    // --- Ground plane --------------------------------------------------------
+    // A big flat quad the shadow actually lands on -- built once in on_init()
+    // like CUBE_VERTICES above rather than wrapped in a model, since
+    // Scene/ModelInternal.h's model_add_*() helpers are private to the
+    // Scene/Model*.c loaders and this is just one hand-built quad.
+    mesh     ground_mesh;
+    material ground_material;
+    f32      ground_y;       // world-space height it sits at; set per loaded model, see load_selected_model()
+    b8       show_ground;
 
     // Overrides for meshes the file gave no material (a bare .obj). Kept
     // here rather than on the model so they survive switching models.
@@ -270,6 +292,15 @@ load_selected_model(demo_state* state, int index)
     // Assets come in wildly different units; fit everything into a ~2 unit
     // box at the origin so the orbit camera framing works for all of them.
     model_get_fit_transform(&state->scene_model, 2.0f, state->model_fit);
+
+    // Sit the ground plane at the fitted model's lowest point, so it reads
+    // as something the model stands on instead of floating through it.
+    // on_frame's world = Spin * Fit only ever rotates around Y through the
+    // origin, which doesn't change Y, so this Y stays correct at every
+    // spin angle, not just the one at load time.
+    vec3 fitted_min;
+    glm_mat4_mulv3(state->model_fit, state->scene_model.bounds_min, 1.0f, fitted_min);
+    state->ground_y = fitted_min[1];
 }
 
 // Runs once from App.c's run(), after the GL context / RHI / ImGui exist.
@@ -337,6 +368,61 @@ on_init(App* app)
 
     if (!state->pbr_shader)
         FATAL("demo: failed to load PBR shader");
+
+    char* shadow_vertex_path   = asset_path("shaders/shadow_depth.vert");
+    char* shadow_fragment_path = asset_path("shaders/shadow_depth.frag");
+
+    state->shadow_shader = rhi_shader_create_from_files(shadow_vertex_path, shadow_fragment_path);
+
+    free(shadow_vertex_path);
+    free(shadow_fragment_path);
+
+    if (!state->shadow_shader)
+        FATAL("demo: failed to load shadow depth shader");
+
+    rhi_framebuffer_desc shadow_fb_desc = {
+        .width = SHADOW_MAP_SIZE,
+        .height = SHADOW_MAP_SIZE,
+        .color_attachments = NULL,
+        .color_attachment_count = 0,
+        .has_depth_attachment = true   // depth-only target -- see RHI.h
+    };
+    state->shadow_map = rhi_framebuffer_create(shadow_fb_desc);
+
+    // Fixed texture unit for the shadow map, one past Material.h's five
+    // material slots (MATERIAL_SLOT_COUNT) so material_bind() never binds
+    // over it -- set once here rather than every frame, same reasoning as
+    // the textured-cube demo's u_texture below.
+    rhi_shader_set_int(state->pbr_shader, "u_shadow_map", MATERIAL_SLOT_COUNT);
+
+    // --- Ground plane ------------------------------------------------------
+    // A big flat quad on the XZ plane so the model's shadow has something
+    // to land on. Only its Y offset changes later (per model, in
+    // load_selected_model()); the geometry itself is built once here.
+    {
+        const f32 half_size = 4.0f;
+
+        mesh_vertex ground_vertices[4] = {
+            { .position = { -half_size, 0.0f, -half_size }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+            { .position = {  half_size, 0.0f, -half_size }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 0.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+            { .position = {  half_size, 0.0f,  half_size }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 1.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+            { .position = { -half_size, 0.0f,  half_size }, .normal = { 0.0f, 1.0f, 0.0f }, .uv = { 0.0f, 1.0f }, .tangent = { 1.0f, 0.0f, 0.0f, 1.0f } },
+        };
+
+        // Wound so the +Y-normal face is front-facing under the RHI's
+        // default CCW-front convention (rhi_render_state_default(), RHI.c).
+        uint32 ground_indices[6] = { 0, 2, 1,  0, 3, 2 };
+
+        state->ground_mesh = mesh_create(ground_vertices, 4, ground_indices, 6);
+
+        material_init_default(&state->ground_material);
+        state->ground_material.base_color[0] = 0.18f;   // dim, non-metal concrete-ish grey --
+        state->ground_material.base_color[1] = 0.18f;   // dark enough that the shadow reads clearly
+        state->ground_material.base_color[2] = 0.18f;   // against it without crushing to black
+        state->ground_material.roughness     = 0.9f;
+
+        state->show_ground = true;
+    }
 
     state->mode = RENDER_MODE_LIT_MODEL;
 
@@ -464,10 +550,47 @@ static void on_frame(App* app, f32 dt)
             vec3 light_dir_normalized;
             glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
 
+            // --- Shadow pass -----------------------------------------------
+            // A directional light has no position, so the shadow camera is
+            // placed back along -light_dir far enough to see the whole
+            // model, looking at the origin -- model_get_fit_transform()
+            // above always centres the model there with a bounding sphere
+            // radius of at most sqrt(3) (target_size 2.0 -> half-extent 1.0
+            // per axis), so a fixed orthographic box comfortably covers any
+            // model this viewer can load without per-model recalculation.
+            {
+                const f32 shadow_distance = 6.0f;
+                const f32 shadow_radius   = 2.0f;
+
+                vec3 light_eye;
+                glm_vec3_scale(light_dir_normalized, -shadow_distance, light_eye);
+
+                // glm_lookat degenerates when its view direction is parallel
+                // to `up` (light pointing straight down/up); swap axes then.
+                vec3 up = { 0.0f, 1.0f, 0.0f };
+                if (fabsf(glm_vec3_dot(light_dir_normalized, up)) > 0.999f)
+                    glm_vec3_copy((vec3){ 0.0f, 0.0f, 1.0f }, up);
+
+                mat4 light_view, light_proj;
+                glm_lookat(light_eye, (vec3){ 0.0f, 0.0f, 0.0f }, up, light_view);
+                glm_ortho(-shadow_radius, shadow_radius, -shadow_radius, shadow_radius,
+                          0.1f, shadow_distance + shadow_radius + 1.0f, light_proj);
+                glm_mat4_mul(light_proj, light_view, state->light_view_projection);
+
+                rhi_framebuffer_bind(state->shadow_map);
+                rhi_clear(0.0f, 0.0f, 0.0f, 1.0f);   // color ignored (no color attachment); this also clears depth to 1.0
+
+                rhi_shader_bind(state->shadow_shader);
+                model_draw_depth(&state->scene_model, state->shadow_shader, world, state->light_view_projection);
+
+                rhi_framebuffer_bind_default();
+            }
+
             rhi_shader shader = state->pbr_shader;
 
             rhi_shader_bind(shader);
             rhi_shader_set_mat4(shader, "u_view_projection", (const f32*)view_projection);
+            rhi_shader_set_mat4(shader, "u_light_view_projection", (const f32*)state->light_view_projection);
             rhi_shader_set_vec3(shader, "u_light_dir",
                                  light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
             rhi_shader_set_vec3(shader, "u_light_color",
@@ -478,9 +601,38 @@ static void on_frame(App* app, f32 dt)
             rhi_shader_set_float(shader, "u_ambient_strength", state->ambient_strength);
             rhi_shader_set_float(shader, "u_exposure", state->exposure);
 
+            // Fixed unit set once in on_init(); only the actual binding needs
+            // to happen here, and only once per frame -- material_bind()
+            // inside model_draw() below never touches this unit.
+            rhi_texture_bind(rhi_framebuffer_get_depth_texture(state->shadow_map), MATERIAL_SLOT_COUNT);
+
             // u_model / u_normal_matrix and every material uniform + texture
             // binding are set per submesh inside model_draw().
             model_draw(&state->scene_model, shader, world);
+
+            if (state->show_ground)
+            {
+                // Not part of `world` (Spin * Fit) -- the ground shouldn't
+                // spin with the model, just sit under it at ground_y.
+                mat4 ground_world;
+                glm_mat4_identity(ground_world);
+                glm_translate(ground_world, (vec3){ 0.0f, state->ground_y, 0.0f });
+
+                mat4 ground_normal_matrix;
+                glm_mat4_inv(ground_world, ground_normal_matrix);
+                glm_mat4_transpose(ground_normal_matrix);
+
+                rhi_shader_set_mat4(shader, "u_model", (const f32*)ground_world);
+                rhi_shader_set_mat4(shader, "u_normal_matrix", (const f32*)ground_normal_matrix);
+
+                // The shadow map is already bound to its fixed unit from
+                // above model_draw() and material_bind() never touches it,
+                // so it's still in place here -- no rebind needed.
+                material_bind(&state->ground_material, shader, false);
+                mesh_draw(&state->ground_mesh);
+
+                rhi_set_render_state(rhi_render_state_default());
+            }
         }
     }
 
@@ -524,6 +676,7 @@ static void on_frame(App* app, f32 dt)
         }
 
         igCheckbox("Spin", &state->spin);
+        igCheckbox("Ground plane", &state->show_ground);
         igSeparator();
 
         igText("Light");
@@ -552,6 +705,10 @@ static void on_shutdown(App* app)
         rhi_texture_destroy(state->textures[i]);
 
     model_destroy(&state->scene_model);
+    mesh_destroy(&state->ground_mesh);
+    material_destroy(&state->ground_material);
+    rhi_framebuffer_destroy(state->shadow_map);
+    rhi_shader_destroy(state->shadow_shader);
     rhi_shader_destroy(state->pbr_shader);
 
     rhi_shader_destroy(state->shader);

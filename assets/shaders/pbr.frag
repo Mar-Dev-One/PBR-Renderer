@@ -11,6 +11,7 @@ in vec3 v_world_pos;
 in vec3 v_normal;
 in vec4 v_tangent;
 in vec2 v_uv;
+in vec4 v_light_space_pos;
 
 out vec4 frag_color;
 
@@ -38,6 +39,8 @@ uniform float u_light_intensity;
 uniform vec3  u_view_pos;
 uniform float u_ambient_strength;
 uniform float u_exposure;
+
+uniform sampler2D u_shadow_map;    // depth-only, rendered by model_draw_depth() from the light's view
 
 const float PI = 3.14159265359;
 
@@ -75,6 +78,40 @@ vec3 env_brdf_approx(vec3 specular_color, float roughness, float NoV)
     float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
     vec2  ab = vec2(-1.04, 1.04) * a004 + r.zw;
     return specular_color * ab.x + ab.y;
+}
+
+// PCF-filtered shadow test. Returns 0 = fully lit .. 1 = fully shadowed.
+// `NoL` drives a slope-scaled bias: surfaces nearly edge-on to the light
+// need more bias than ones facing it head-on, or they self-shadow in
+// stripes ("shadow acne").
+float shadow_calculation(vec4 light_space_pos, float NoL)
+{
+    // Perspective divide -- a no-op for the orthographic light projection
+    // used today, but harmless and keeps this correct if that ever changes
+    // to a spot light's perspective projection.
+    vec3 proj = light_space_pos.xyz / light_space_pos.w;
+    proj = proj * 0.5 + 0.5;   // clip space [-1,1] -> depth-map/UV space [0,1]
+
+    // Outside the light's frustum (or beyond its far plane): nothing known
+    // about occluders there, so don't shadow it.
+    if (proj.z > 1.0 || proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0)
+        return 0.0;
+
+    float bias = max(0.0025 * (1.0 - NoL), 0.0006);
+
+    vec2  texel  = 1.0 / vec2(textureSize(u_shadow_map, 0));
+    float shadow = 0.0;
+
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            float closest_depth = texture(u_shadow_map, proj.xy + vec2(x, y) * texel).r;
+            shadow += (proj.z - bias > closest_depth) ? 1.0 : 0.0;
+        }
+    }
+
+    return shadow / 9.0;
 }
 
 vec3 hemisphere(vec3 dir)
@@ -152,7 +189,8 @@ void main()
     vec3 specular = distribution_ggx(NoH, alpha) * visibility_smith_ggx(NoV, NoL, alpha) * F;
     vec3 diffuse  = (1.0 - F) * diffuse_color / PI;
 
-    vec3 direct = (diffuse + specular) * u_light_color * u_light_intensity * NoL;
+    float shadow = shadow_calculation(v_light_space_pos, NoL);
+    vec3  direct = (diffuse + specular) * u_light_color * u_light_intensity * NoL * (1.0 - shadow);
 
     // --- Ambient (hemisphere stand-in for IBL) -----------------------------------
     vec3 irradiance = hemisphere(N);

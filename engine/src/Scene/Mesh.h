@@ -51,6 +51,14 @@ typedef struct mesh
 mesh mesh_create(const mesh_vertex* vertices, uint32 vertex_count,
                   const uint32* indices, uint32 index_count);
 
+// Unit-radius UV sphere centred on the origin, with exact analytic normals
+// and tangents (no seam artifacts in normal mapping). `segments` is the
+// number of slices around the Y axis, `rings` the number of bands from pole
+// to pole; 64 x 32 is smooth enough that the silhouette looks round.
+// Handy for material tests, where the geometry should be the least
+// interesting thing on screen.
+mesh mesh_create_uv_sphere(uint32 segments, uint32 rings);
+
 // --- CPU-side vertex helpers (run before mesh_create) --------------------
 
 // Fills in every vertex's `normal` as the area-weighted average of the
