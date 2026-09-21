@@ -91,7 +91,8 @@ static const char* HDRI_NAMES[] = {
 typedef enum render_mode
 {
     RENDER_MODE_TEXTURED_CUBE,
-    RENDER_MODE_LIT_MODEL
+    RENDER_MODE_LIT_MODEL,
+    RENDER_MODE_MATERIAL_GRID   // IBL demo: a metallic x roughness sphere grid, see draw_material_grid()
 } render_mode;
 
 typedef struct demo_state
@@ -131,6 +132,13 @@ typedef struct demo_state
     // --- Image-based lighting -----------------------------------------------
     // Baked from an HDRI (Renderer/IBL.h) and read by pbr.frag for ambient
     // diffuse + specular. All zeroes when no HDRI could be loaded.
+    // --- Material grid (RENDER_MODE_MATERIAL_GRID) ----------------------------
+    // The classic IBL test pattern: the same sphere drawn 7 x 5 times, roughness
+    // sweeping left to right and metallic top to bottom. Loaded on first use.
+    model           grid_model;
+    b8              grid_load_attempted;
+    vec3            grid_albedo;         // sRGB, like default_albedo; converted to linear when drawn
+
     ibl_environment ibl;
     int             selected_hdri;   // index into HDRI_PATHS/HDRI_NAMES, driven by the GUI combo box
     int             loaded_hdri;     // which entry `ibl` was last baked from (-1 = not yet); the load may have failed
@@ -444,6 +452,8 @@ on_init(App* app)
     // the textured-cube demo's u_texture below.
     rhi_shader_set_int(state->pbr_shader, "u_shadow_map", MATERIAL_SLOT_COUNT);
 
+    state->grid_albedo[0] = state->grid_albedo[1] = state->grid_albedo[2] = 0.9f;
+
     state->show_skybox   = true;
     state->sky_blur      = 0.0f;
     state->selected_hdri = 0;
@@ -540,6 +550,153 @@ static void on_key(App* app, int key, int action, int mods)
         app->should_close = true;
 }
 
+// Light + image-based-lighting controls, shared by the lit-model and material
+// grid panels.
+static void
+draw_lighting_controls(demo_state* state)
+{
+    igText("Light");
+    igColorEdit3("Light Color", state->light_color, 0);
+    igSliderFloat3("Light Direction", state->light_dir, -1.0f, 1.0f, "%.2f", 0);
+    igSliderFloat("Light Intensity", &state->light_intensity, 0.0f, 10.0f, "%.2f", 0);
+    igSliderFloat("Ambient", &state->ambient_strength, 0.0f, 2.0f, "%.2f", 0);
+    igSliderFloat("Exposure", &state->exposure, 0.1f, 4.0f, "%.2f", 0);
+    igSeparator();
+
+    igText("Image-based lighting");
+    igCombo_Str_arr("HDRI", &state->selected_hdri, HDRI_NAMES, (int)HDRI_COUNT, -1);
+
+    if (state->ibl.irradiance)
+    {
+        igCheckbox("Use IBL", &state->ibl_enabled);
+        igCheckbox("Show skybox", &state->show_skybox);
+        igSliderFloat("Sky blur", &state->sky_blur, 0.0f, 1.0f, "%.2f", 0);
+    }
+    else
+    {
+        igText("No HDRI loaded. Expected:");
+        igText("assets/%s", HDRI_PATHS[state->selected_hdri]);
+    }
+    igSeparator();
+}
+
+// Square the camera up to the grid -- the default viewpoint is a corner view
+// meant for a single model, which foreshortens a flat 7 x 5 layout badly.
+static void
+frame_material_grid(demo_state* state)
+{
+    state->orbit_yaw      = 0.0f;
+    state->orbit_pitch    = 0.0f;
+    state->orbit_distance = 7.6f;
+    orbit_camera_apply(state);
+}
+
+#define GRID_COLUMNS        7       // roughness: 0.05 (left) .. 1.0 (right)
+#define GRID_ROWS           5       // metallic:  1.0 (top)   .. 0.0 (bottom)
+#define GRID_SPACING        0.62f   // centre to centre, in world units
+#define GRID_SPHERE_RADIUS  0.27f
+
+// The grid sits right of the origin because the "Scene" panel covers the left
+// third of the default 800x600 window, and the leftmost column (the mirror-
+// smooth spheres) is the one worth seeing.
+#define GRID_CENTER_X       1.5f
+
+// Draws the IBL demo: one sphere per (roughness, metallic) pair, lit by the
+// baked environment. Shows what image-based lighting does to each kind of
+// surface: mirror-sharp reflections on the smooth metals (top left) that blur
+// out to a soft glow as roughness rises, and diffuse-only dielectrics (bottom
+// row) that pick up the sky and ground colors from the irradiance map.
+static void
+draw_material_grid(demo_state* state, const mat4 view_projection)
+{
+    if (!state->grid_load_attempted)
+    {
+        state->grid_load_attempted = true;   // a failed load is logged once, not every frame
+
+        char* path = asset_path("models/sphere.obj");
+        state->grid_model = model_load(path);
+        free(path);
+    }
+
+    model* sphere = &state->grid_model;
+    if (sphere->submesh_count == 0)
+        return;
+
+    if (state->ibl_enabled && state->show_skybox)
+    {
+        mat4 view, projection;
+        camera_get_view(&state->cam, view);
+        camera_get_projection(&state->cam, projection);
+
+        ibl_draw_skybox(&state->ibl, view, projection, state->exposure, state->sky_blur);
+    }
+
+    // The demo is about ambient light, so nothing casts shadows: clear the
+    // shadow map to "nothing blocks the light" (depth 1.0) and use an identity
+    // light matrix so the shader's lookup lands inside it and says lit.
+    rhi_framebuffer_bind(state->shadow_map);
+    rhi_clear(0.0f, 0.0f, 0.0f, 1.0f);
+    rhi_framebuffer_bind_default();
+
+    mat4 identity;
+    glm_mat4_identity(identity);
+
+    vec3 light_dir_normalized;
+    glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
+
+    rhi_shader shader = state->pbr_shader;
+
+    rhi_shader_bind(shader);
+    rhi_shader_set_mat4(shader, "u_view_projection", (const f32*)view_projection);
+    rhi_shader_set_mat4(shader, "u_light_view_projection", (const f32*)identity);
+    rhi_shader_set_vec3(shader, "u_light_dir",
+                         light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
+    rhi_shader_set_vec3(shader, "u_light_color",
+                         state->light_color[0], state->light_color[1], state->light_color[2]);
+    rhi_shader_set_float(shader, "u_light_intensity", state->light_intensity);
+    rhi_shader_set_vec3(shader, "u_view_pos",
+                         state->cam.position[0], state->cam.position[1], state->cam.position[2]);
+    rhi_shader_set_float(shader, "u_ambient_strength", state->ambient_strength);
+    rhi_shader_set_float(shader, "u_exposure", state->exposure);
+
+    ibl_bind(state->ibl_enabled ? &state->ibl : NULL, shader);
+    rhi_texture_bind(rhi_framebuffer_get_depth_texture(state->shadow_map), MATERIAL_SLOT_COUNT);
+
+    // sphere.obj has no material of its own, so every submesh uses
+    // default_material: rewrite it between draws. The picker shows sRGB,
+    // material colors are linear.
+    material* dm = &sphere->default_material;
+    dm->base_color[0] = powf(state->grid_albedo[0], 2.2f);
+    dm->base_color[1] = powf(state->grid_albedo[1], 2.2f);
+    dm->base_color[2] = powf(state->grid_albedo[2], 2.2f);
+
+    mat4 fit;
+    model_get_fit_transform(sphere, 2.0f, fit);   // radius 1, centred on the origin
+
+    for (int row = 0; row < GRID_ROWS; ++row)
+    {
+        for (int col = 0; col < GRID_COLUMNS; ++col)
+        {
+            dm->metallic  = 1.0f - (f32)row / (f32)(GRID_ROWS - 1);
+            dm->roughness = 0.05f + 0.95f * (f32)col / (f32)(GRID_COLUMNS - 1);
+
+            vec3 position = {
+                GRID_CENTER_X + ((f32)col - 0.5f * (GRID_COLUMNS - 1)) * GRID_SPACING,
+                (0.5f * (GRID_ROWS - 1) - (f32)row)    * GRID_SPACING,
+                0.0f
+            };
+
+            mat4 world;
+            glm_mat4_identity(world);
+            glm_translate(world, position);
+            glm_scale_uni(world, GRID_SPHERE_RADIUS);
+            glm_mat4_mul(world, fit, world);
+
+            model_draw(sphere, shader, world);
+        }
+    }
+}
+
 static void on_frame(App* app, f32 dt)
 {
     (void)dt;
@@ -572,6 +729,13 @@ static void on_frame(App* app, f32 dt)
         rhi_texture_bind(state->textures[state->selected_texture], 0);
         rhi_draw_indexed(state->vertex_buffer, state->index_buffer,
                           sizeof(CUBE_INDICES) / sizeof(CUBE_INDICES[0]));
+    }
+    else if (state->mode == RENDER_MODE_MATERIAL_GRID)
+    {
+        if (state->selected_hdri != state->loaded_hdri)
+            load_selected_hdri(state, state->selected_hdri);
+
+        draw_material_grid(state, view_projection);
     }
     else // RENDER_MODE_LIT_MODEL
     {
@@ -723,6 +887,9 @@ static void on_frame(App* app, f32 dt)
     igRadioButton_IntPtr("Textured Cube", (int*)&state->mode, RENDER_MODE_TEXTURED_CUBE);
     igSameLine(0.0f, -1.0f);
     igRadioButton_IntPtr("Lit Model", (int*)&state->mode, RENDER_MODE_LIT_MODEL);
+    igSameLine(0.0f, -1.0f);
+    if (igRadioButton_IntPtr("Grid", (int*)&state->mode, RENDER_MODE_MATERIAL_GRID))
+        frame_material_grid(state);
     igSeparator();
 
     if (state->mode == RENDER_MODE_TEXTURED_CUBE)
@@ -732,6 +899,15 @@ static void on_frame(App* app, f32 dt)
         // plumbing needed between "user picks an entry" and "the cube
         // shows it".
         igCombo_Str_arr("Texture", &state->selected_texture, TEXTURE_NAMES, (int)TEXTURE_COUNT, -1);
+    }
+    else if (state->mode == RENDER_MODE_MATERIAL_GRID)
+    {
+        igTextWrapped("Columns: roughness 0.05 to 1.0, left to right.");
+        igTextWrapped("Rows: metallic 1.0 to 0.0, top to bottom.");
+        igColorEdit3("Albedo", state->grid_albedo, 0);
+        igSeparator();
+
+        draw_lighting_controls(state);
     }
     else // RENDER_MODE_LIT_MODEL
     {
@@ -753,29 +929,7 @@ static void on_frame(App* app, f32 dt)
         igCheckbox("Ground plane", &state->show_ground);
         igSeparator();
 
-        igText("Light");
-        igColorEdit3("Light Color", state->light_color, 0);
-        igSliderFloat3("Light Direction", state->light_dir, -1.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Light Intensity", &state->light_intensity, 0.0f, 10.0f, "%.2f", 0);
-        igSliderFloat("Ambient", &state->ambient_strength, 0.0f, 2.0f, "%.2f", 0);
-        igSliderFloat("Exposure", &state->exposure, 0.1f, 4.0f, "%.2f", 0);
-        igSeparator();
-
-        igText("Image-based lighting");
-        igCombo_Str_arr("HDRI", &state->selected_hdri, HDRI_NAMES, (int)HDRI_COUNT, -1);
-
-        if (state->ibl.irradiance)
-        {
-            igCheckbox("Use IBL", &state->ibl_enabled);
-            igCheckbox("Show skybox", &state->show_skybox);
-            igSliderFloat("Sky blur", &state->sky_blur, 0.0f, 1.0f, "%.2f", 0);
-        }
-        else
-        {
-            igText("No HDRI loaded. Expected:");
-            igText("assets/%s", HDRI_PATHS[state->selected_hdri]);
-        }
-        igSeparator();
+        draw_lighting_controls(state);
 
         igText("Default material (models without one)");
         igColorEdit3("Albedo", state->default_albedo, 0);
@@ -797,6 +951,7 @@ static void on_shutdown(App* app)
     model_destroy(&state->scene_model);
     mesh_destroy(&state->ground_mesh);
     material_destroy(&state->ground_material);
+    model_destroy(&state->grid_model);
     ibl_destroy(&state->ibl);
     rhi_framebuffer_destroy(state->shadow_map);
     rhi_shader_destroy(state->shadow_shader);
