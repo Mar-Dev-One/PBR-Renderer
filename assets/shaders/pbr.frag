@@ -1,9 +1,10 @@
 #version 460 core
 
 // Metallic-roughness PBR (Cook-Torrance GGX) for models loaded through
-// Scene/Model.h. Direct light is one directional light; indirect light is a
-// cheap sky/ground hemisphere standing in for image-based lighting until
-// real IBL exists -- enough that metals aren't pitch black.
+// Scene/Model.h. Direct light is one directional light; indirect light is
+// image-based (Renderer/IBL.h: baked irradiance + GGX-prefiltered environment)
+// when u_use_ibl is set, and otherwise a cheap sky/ground hemisphere -- enough
+// that metals aren't pitch black while no environment is loaded.
 // Output is tone-mapped and gamma-encoded, so it goes straight to the
 // (non-sRGB) default framebuffer.
 
@@ -41,6 +42,12 @@ uniform float u_ambient_strength;
 uniform float u_exposure;
 
 uniform sampler2D u_shadow_map;    // depth-only, rendered by model_draw_depth() from the light's view
+
+// --- Image-based lighting (set by ibl_bind, see Renderer/IBL.h) ---------------
+uniform int         u_use_ibl;              // 0 = hemisphere fallback below
+uniform samplerCube u_irradiance_map;       // slot 6, diffuse irradiance / pi
+uniform samplerCube u_prefiltered_map;      // slot 7, mip N = GGX-blurred at roughness N / max_lod
+uniform float       u_prefiltered_max_lod;  // last mip index of u_prefiltered_map
 
 const float PI = 3.14159265359;
 
@@ -192,10 +199,22 @@ void main()
     float shadow = shadow_calculation(v_light_space_pos, NoL);
     vec3  direct = (diffuse + specular) * u_light_color * u_light_intensity * NoL * (1.0 - shadow);
 
-    // --- Ambient (hemisphere stand-in for IBL) -----------------------------------
-    vec3 irradiance = hemisphere(N);
+    // --- Ambient --------------------------------------------------------------------
     vec3 R = reflect(-V, N);
-    vec3 reflection = mix(hemisphere(R), irradiance, roughness);   // rougher = blurrier = closer to the average
+
+    vec3 irradiance;
+    vec3 reflection;
+    if (u_use_ibl != 0)
+    {
+        irradiance = texture(u_irradiance_map, N).rgb;
+        reflection = textureLod(u_prefiltered_map, R, roughness * u_prefiltered_max_lod).rgb;
+    }
+    else
+    {
+        // Hemisphere stand-in used until an environment is loaded.
+        irradiance = hemisphere(N);
+        reflection = mix(hemisphere(R), irradiance, roughness);   // rougher = blurrier = closer to the average
+    }
 
     vec3 ambient = (diffuse_color * irradiance + reflection * env_brdf_approx(f0, roughness, NoV))
                  * occlusion * u_ambient_strength;

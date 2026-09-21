@@ -37,12 +37,19 @@ typedef struct rhi_backend_api
     rhi_texture (*texture_create)(rhi_texture_desc desc);
     void        (*texture_destroy)(rhi_texture texture);
 
+    rhi_texture (*cubemap_create)(rhi_cubemap_desc desc);
+    void        (*cubemap_generate_mipmaps)(rhi_texture cubemap);
+
     rhi_framebuffer (*framebuffer_create)(rhi_framebuffer_desc desc);
     void            (*framebuffer_bind)(rhi_framebuffer framebuffer);
     void            (*framebuffer_bind_default)(void);
     rhi_texture     (*framebuffer_get_color_texture)(rhi_framebuffer framebuffer, uint32 index);
     rhi_texture     (*framebuffer_get_depth_texture)(rhi_framebuffer framebuffer);
     void            (*framebuffer_destroy)(rhi_framebuffer framebuffer);
+    rhi_framebuffer (*framebuffer_create_cubemap_target)(void);
+    void            (*framebuffer_set_cubemap_target)(rhi_framebuffer framebuffer,
+                                                       rhi_texture cubemap,
+                                                       uint32 face, uint32 mip);
 
     void (*set_render_state)(rhi_render_state state);
 

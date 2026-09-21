@@ -11,6 +11,7 @@
 #include "Core/Defines.h"
 #include "Core/Paths.h"
 #include "RHI/RHI.h"
+#include "Renderer/IBL.h"
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
 #include "Scene/Model.h"
@@ -64,6 +65,23 @@ static const char* MODEL_NAMES[] = {
 
 #define MODEL_COUNT (sizeof(MODEL_PATHS) / sizeof(MODEL_PATHS[0]))
 
+// HDRI picker: equirectangular (2:1 lat/long) Radiance .hdr panoramas the GUI
+// can bake into image-based lighting. Add an entry here (and drop the file in
+// assets/hdri/) to make a new one selectable. Any 1k-2k HDRI works; Poly
+// Haven (polyhaven.com/hdris, CC0) has plenty. A missing file is not an
+// error -- the shader falls back to its built-in hemisphere ambient.
+static const char* HDRI_PATHS[] = {
+    "hdri/citrus_orchard_road_puresky_4k.hdr",
+    "hdri/table_mountain_2_puresky_4k.hdr"
+};
+
+static const char* HDRI_NAMES[] = {
+    "citrus_orchard_road_puresky_4k.hdr",
+    "table_mountain_2_puresky_4k.hdr"
+};
+
+#define HDRI_COUNT (sizeof(HDRI_PATHS) / sizeof(HDRI_PATHS[0]))
+
 // Resolution of the directional light's shadow map. A depth-only
 // framebuffer, so this is cheap to size generously.
 #define SHADOW_MAP_SIZE 2048
@@ -109,6 +127,16 @@ typedef struct demo_state
     rhi_shader      shadow_shader;
     rhi_framebuffer shadow_map;
     mat4            light_view_projection;   // light's view * projection, recomputed each frame
+
+    // --- Image-based lighting -----------------------------------------------
+    // Baked from an HDRI (Renderer/IBL.h) and read by pbr.frag for ambient
+    // diffuse + specular. All zeroes when no HDRI could be loaded.
+    ibl_environment ibl;
+    int             selected_hdri;   // index into HDRI_PATHS/HDRI_NAMES, driven by the GUI combo box
+    int             loaded_hdri;     // which entry `ibl` was last baked from (-1 = not yet); the load may have failed
+    b8              ibl_enabled;     // use `ibl` for ambient light (needs a loaded HDRI)
+    b8              show_skybox;     // draw the HDRI as the background
+    f32             sky_blur;        // 0..1, how blurry the background is
 
     // --- Ground plane --------------------------------------------------------
     // A big flat quad the shadow actually lands on -- built once in on_init()
@@ -307,6 +335,23 @@ load_selected_model(demo_state* state, int index)
     state->ground_y = fitted_min[1];
 }
 
+// Bakes HDRI_PATHS[index] into state->ibl, replacing whatever was there. A
+// missing/unreadable file leaves image-based lighting off, not the app dead.
+static void
+load_selected_hdri(demo_state* state, int index)
+{
+    ibl_destroy(&state->ibl);
+    state->loaded_hdri = index;
+
+    char* path = asset_path(HDRI_PATHS[index]);
+    state->ibl_enabled = ibl_create(&state->ibl, path);
+
+    if (!state->ibl_enabled)
+        LOG_WARN("No environment loaded from '%s' -- using the hemisphere ambient light\n", path);
+
+    free(path);
+}
+
 // Runs once from App.c's run(), after the GL context / RHI / ImGui exist.
 static void
 on_init(App* app)
@@ -398,6 +443,12 @@ on_init(App* app)
     // over it -- set once here rather than every frame, same reasoning as
     // the textured-cube demo's u_texture below.
     rhi_shader_set_int(state->pbr_shader, "u_shadow_map", MATERIAL_SLOT_COUNT);
+
+    state->show_skybox   = true;
+    state->sky_blur      = 0.0f;
+    state->selected_hdri = 0;
+    state->loaded_hdri   = -1;
+    load_selected_hdri(state, state->selected_hdri);
 
     // --- Ground plane ------------------------------------------------------
     // A big flat quad on the XZ plane so the model's shadow has something
@@ -528,6 +579,9 @@ static void on_frame(App* app, f32 dt)
         if (state->selected_model != state->loaded_model)
             load_selected_model(state, state->selected_model);
 
+        if (state->selected_hdri != state->loaded_hdri)
+            load_selected_hdri(state, state->selected_hdri);
+
         if (state->scene_model.submesh_count > 0)
         {
             // Push the GUI's default-material tweaks into the model; only
@@ -590,6 +644,17 @@ static void on_frame(App* app, f32 dt)
                 rhi_framebuffer_bind_default();
             }
 
+            // Background first: it writes no depth, and blended materials drawn
+            // below need the sky already behind them.
+            if (state->ibl_enabled && state->show_skybox)
+            {
+                mat4 view, projection;
+                camera_get_view(&state->cam, view);
+                camera_get_projection(&state->cam, projection);
+
+                ibl_draw_skybox(&state->ibl, view, projection, state->exposure, state->sky_blur);
+            }
+
             rhi_shader shader = state->pbr_shader;
 
             rhi_shader_bind(shader);
@@ -604,6 +669,11 @@ static void on_frame(App* app, f32 dt)
                                  state->cam.position[0], state->cam.position[1], state->cam.position[2]);
             rhi_shader_set_float(shader, "u_ambient_strength", state->ambient_strength);
             rhi_shader_set_float(shader, "u_exposure", state->exposure);
+
+            // Ambient light: baked IBL when enabled, else the shader's
+            // hemisphere fallback. Uses IBL_SLOT_* texture units, clear of
+            // the material slots and the shadow map.
+            ibl_bind(state->ibl_enabled ? &state->ibl : NULL, shader);
 
             // Fixed unit set once in on_init(); only the actual binding needs
             // to happen here, and only once per frame -- material_bind()
@@ -691,6 +761,22 @@ static void on_frame(App* app, f32 dt)
         igSliderFloat("Exposure", &state->exposure, 0.1f, 4.0f, "%.2f", 0);
         igSeparator();
 
+        igText("Image-based lighting");
+        igCombo_Str_arr("HDRI", &state->selected_hdri, HDRI_NAMES, (int)HDRI_COUNT, -1);
+
+        if (state->ibl.irradiance)
+        {
+            igCheckbox("Use IBL", &state->ibl_enabled);
+            igCheckbox("Show skybox", &state->show_skybox);
+            igSliderFloat("Sky blur", &state->sky_blur, 0.0f, 1.0f, "%.2f", 0);
+        }
+        else
+        {
+            igText("No HDRI loaded. Expected:");
+            igText("assets/%s", HDRI_PATHS[state->selected_hdri]);
+        }
+        igSeparator();
+
         igText("Default material (models without one)");
         igColorEdit3("Albedo", state->default_albedo, 0);
         igSliderFloat("Metallic", &state->default_metallic, 0.0f, 1.0f, "%.2f", 0);
@@ -711,6 +797,7 @@ static void on_shutdown(App* app)
     model_destroy(&state->scene_model);
     mesh_destroy(&state->ground_mesh);
     material_destroy(&state->ground_material);
+    ibl_destroy(&state->ibl);
     rhi_framebuffer_destroy(state->shadow_map);
     rhi_shader_destroy(state->shadow_shader);
     rhi_shader_destroy(state->pbr_shader);

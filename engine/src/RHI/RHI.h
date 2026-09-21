@@ -92,6 +92,17 @@ typedef struct rhi_framebuffer_desc
     b8                                has_depth_attachment;
 } rhi_framebuffer_desc;
 
+// A cube map: six square faces addressed by direction. Face order matches
+// OpenGL's (and every other API's): +X, -X, +Y, -Y, +Z, -Z = 0..5.
+typedef struct rhi_cubemap_desc
+{
+    uint16             size;        // edge length of one face in pixels (mip 0)
+    rhi_texture_format format;      // a color format; RHI_FORMAT_DEPTH24 is not supported
+    uint32             mip_count;   // >= 1. Storage for every level is allocated up front so each one
+                                    // can be rendered into (prefiltered environment maps); clamped to
+                                    // the longest chain `size` allows.
+} rhi_cubemap_desc;
+
 // One folder per graphics API (src/RHI/OpenGL, src/RHI/Vulkan, ...).
 // Only the backends actually compiled in are available; add to this
 // enum as new backend folders are implemented.
@@ -170,6 +181,18 @@ rhi_texture rhi_texture_create_from_file(const char* path,
 void        rhi_texture_bind(rhi_texture texture, uint32 slot);
 void        rhi_texture_destroy(rhi_texture texture);
 
+// --- Cubemaps -------------------------------------------------------------
+// Empty cube map (contents undefined until rendered into via
+// rhi_framebuffer_set_cubemap_target). Clamp-to-edge, linear filtering
+// (trilinear when mip_count > 1), and seamless across face edges. Bind with
+// rhi_texture_bind() like any other texture and sample it with a
+// `samplerCube`. Free with rhi_texture_destroy().
+rhi_texture rhi_cubemap_create(rhi_cubemap_desc desc);
+
+// Fills mip levels 1..N-1 from level 0. Call after rendering all six faces
+// of mip 0.
+void        rhi_cubemap_generate_mipmaps(rhi_texture cubemap);
+
 // --- Framebuffers --------------------------------------------------------
 // Render targets for offscreen passes: shadow maps, HDR scene color,
 // G-buffer, IBL convolution, etc. Rendering to the screen doesn't need
@@ -180,6 +203,18 @@ void            rhi_framebuffer_bind_default(void);
 rhi_texture     rhi_framebuffer_get_color_texture(rhi_framebuffer framebuffer, uint32 index);
 rhi_texture     rhi_framebuffer_get_depth_texture(rhi_framebuffer framebuffer);
 void            rhi_framebuffer_destroy(rhi_framebuffer framebuffer);
+
+// Render-to-cubemap: a framebuffer that owns no attachments. Point it at one
+// face / mip level of a cube map with rhi_framebuffer_set_cubemap_target()
+// and draw; repeat for each face and level. Destroy with
+// rhi_framebuffer_destroy() (that does not free the cube map).
+rhi_framebuffer rhi_framebuffer_create_cubemap_target(void);
+
+// Attaches `face` (0..5) at `mip` of `cubemap` as color attachment 0, then
+// binds the framebuffer and sets the viewport to that level's size.
+void            rhi_framebuffer_set_cubemap_target(rhi_framebuffer framebuffer,
+                                                   rhi_texture cubemap,
+                                                   uint32 face, uint32 mip);
 
 // --- Render state --------------------------------------------------------
 // The handful of per-draw switches a material can change (glTF's

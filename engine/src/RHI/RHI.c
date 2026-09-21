@@ -167,6 +167,16 @@ void rhi_texture_destroy(rhi_texture texture)
     backend.texture_destroy(texture);
 }
 
+rhi_texture rhi_cubemap_create(rhi_cubemap_desc desc)
+{
+    return backend.cubemap_create(desc);
+}
+
+void rhi_cubemap_generate_mipmaps(rhi_texture cubemap)
+{
+    backend.cubemap_generate_mipmaps(cubemap);
+}
+
 rhi_framebuffer rhi_framebuffer_create(rhi_framebuffer_desc desc)
 {
     // ASSERT compiles to nothing in release (NDEBUG) builds, but the
@@ -203,6 +213,17 @@ rhi_texture rhi_framebuffer_get_depth_texture(rhi_framebuffer framebuffer)
 void rhi_framebuffer_destroy(rhi_framebuffer framebuffer)
 {
     backend.framebuffer_destroy(framebuffer);
+}
+
+rhi_framebuffer rhi_framebuffer_create_cubemap_target(void)
+{
+    return backend.framebuffer_create_cubemap_target();
+}
+
+void rhi_framebuffer_set_cubemap_target(rhi_framebuffer framebuffer, rhi_texture cubemap,
+                                        uint32 face, uint32 mip)
+{
+    backend.framebuffer_set_cubemap_target(framebuffer, cubemap, face, mip);
 }
 
 rhi_render_state rhi_render_state_default(void)

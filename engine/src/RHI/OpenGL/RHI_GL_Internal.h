@@ -21,6 +21,10 @@ struct rhi_shader
 struct rhi_texture
 {
     GLuint handle;
+    GLenum target;      // GL_TEXTURE_2D or GL_TEXTURE_CUBE_MAP -- what gl_texture_bind() binds it as
+    uint16 width;       // mip 0 size
+    uint16 height;
+    uint32 mip_count;   // levels allocated for cube maps; 1 for plain 2D textures
 };
 
 struct rhi_framebuffer
@@ -73,6 +77,8 @@ void       gl_shader_set_float(rhi_shader shader, const char* name, f32 value);
 rhi_texture gl_texture_create(rhi_texture_desc desc);
 void        gl_texture_bind(rhi_texture texture, uint32 slot);
 void        gl_texture_destroy(rhi_texture texture);
+rhi_texture gl_cubemap_create(rhi_cubemap_desc desc);
+void        gl_cubemap_generate_mipmaps(rhi_texture cubemap);
 
 // --- RHI_GL_Framebuffer.c -----------------------------------------------
 rhi_framebuffer gl_framebuffer_create(rhi_framebuffer_desc desc);
@@ -81,6 +87,9 @@ void            gl_framebuffer_bind_default(void);
 rhi_texture     gl_framebuffer_get_color_texture(rhi_framebuffer framebuffer, uint32 index);
 rhi_texture     gl_framebuffer_get_depth_texture(rhi_framebuffer framebuffer);
 void            gl_framebuffer_destroy(rhi_framebuffer framebuffer);
+rhi_framebuffer gl_framebuffer_create_cubemap_target(void);
+void            gl_framebuffer_set_cubemap_target(rhi_framebuffer framebuffer, rhi_texture cubemap,
+                                                   uint32 face, uint32 mip);
 
 // Shared small helper (used by RHI_GL_Buffer.c)
 GLenum gl_usage_to_gl(rhi_buffer_usage usage);

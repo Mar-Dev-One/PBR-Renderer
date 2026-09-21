@@ -72,6 +72,11 @@ rhi_texture gl_texture_create(rhi_texture_desc desc)
     if (!tex)
         FATAL("Out of memory creating texture");
 
+    tex->target = GL_TEXTURE_2D;
+    tex->width = desc.width;
+    tex->height = desc.height;
+    tex->mip_count = 1;
+
     glGenTextures(1, &tex->handle);
     glBindTexture(GL_TEXTURE_2D, tex->handle);
 
@@ -108,7 +113,7 @@ rhi_texture gl_texture_create(rhi_texture_desc desc)
 void gl_texture_bind(rhi_texture texture, uint32 slot)
 {
     glActiveTexture(GL_TEXTURE0 + slot);
-    glBindTexture(GL_TEXTURE_2D, texture->handle);
+    glBindTexture(texture->target, texture->handle);
 }
 
 void gl_texture_destroy(rhi_texture texture)
@@ -118,4 +123,61 @@ void gl_texture_destroy(rhi_texture texture)
 
     glDeleteTextures(1, &texture->handle);
     free(texture);
+}
+
+rhi_texture gl_cubemap_create(rhi_cubemap_desc desc)
+{
+    ASSERT(desc.size > 0);
+    ASSERT(desc.format != RHI_FORMAT_DEPTH24);
+
+    // Only the internal format matters here; nothing is uploaded.
+    GLenum internal_format, upload_format, upload_type;
+    gl_texture_format_info(desc.format, &internal_format, &upload_format, &upload_type);
+
+    // A chain can't be longer than log2(size) + 1 levels (size -> ... -> 1).
+    uint32 max_mips = 1;
+    for (uint32 s = desc.size; s > 1; s >>= 1)
+        ++max_mips;
+
+    uint32 mip_count = desc.mip_count < 1 ? 1 : desc.mip_count;
+    if (mip_count > max_mips)
+        mip_count = max_mips;
+
+    rhi_texture tex = malloc(sizeof(*tex));
+    if (!tex)
+        FATAL("Out of memory creating cubemap");
+
+    tex->target = GL_TEXTURE_CUBE_MAP;
+    tex->width = desc.size;
+    tex->height = desc.size;
+    tex->mip_count = mip_count;
+
+    glGenTextures(1, &tex->handle);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, tex->handle);
+
+    // Immutable storage for all six faces and every mip level, so any
+    // (face, level) can be attached to a framebuffer and rendered into.
+    glTexStorage2D(GL_TEXTURE_CUBE_MAP, (GLsizei)mip_count, internal_format, desc.size, desc.size);
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER,
+                    mip_count > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAX_LEVEL, (GLint)(mip_count - 1));
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+    return tex;
+}
+
+void gl_cubemap_generate_mipmaps(rhi_texture cubemap)
+{
+    ASSERT(cubemap->target == GL_TEXTURE_CUBE_MAP);
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap->handle);
+    glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }

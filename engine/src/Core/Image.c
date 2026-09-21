@@ -68,3 +68,41 @@ void image_free(image* img)
     stbi_image_free(img->pixels);
     img->pixels = NULL;
 }
+
+image_hdr image_load_hdr(const char* path)
+{
+    image_hdr img = { 0 };
+
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, source_channels;
+    float* pixels = stbi_loadf(path, &width, &height, &source_channels, 4);
+
+    if (!pixels)
+    {
+        LOG_ERROR("Could not load HDR image '%s': %s\n", path, stbi_failure_reason());
+        return img;
+    }
+
+    if (width > 0xFFFF || height > 0xFFFF)
+    {
+        LOG_ERROR("HDR image '%s' is too large (%dx%d, max 65535 per side)\n", path, width, height);
+        stbi_image_free(pixels);
+        return img;
+    }
+
+    img.pixels = pixels;
+    img.width = (uint16)width;
+    img.height = (uint16)height;
+
+    return img;
+}
+
+void image_hdr_free(image_hdr* img)
+{
+    if (!img || !img->pixels)
+        return;
+
+    stbi_image_free(img->pixels);
+    img->pixels = NULL;
+}

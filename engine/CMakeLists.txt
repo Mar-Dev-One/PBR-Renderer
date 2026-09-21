@@ -4,6 +4,7 @@ add_library(PBR_Engine STATIC
     src/Core/Paths.c
     src/Core/Image.c
     src/Renderer/Renderer.c
+    src/Renderer/IBL.c
     src/RHI/RHI.c
     src/RHI/OpenGL/RHI_GL.c
     src/RHI/OpenGL/RHI_GL_Buffer.c

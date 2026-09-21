@@ -108,3 +108,46 @@ void gl_framebuffer_destroy(rhi_framebuffer framebuffer)
     glDeleteFramebuffers(1, &framebuffer->fbo);
     free(framebuffer);
 }
+
+rhi_framebuffer gl_framebuffer_create_cubemap_target(void)
+{
+    rhi_framebuffer fb = malloc(sizeof(*fb));
+    if (!fb)
+        FATAL("Out of memory creating framebuffer");
+
+    // No attachments of its own: the color target (a face of somebody else's
+    // cube map) is swapped in by gl_framebuffer_set_cubemap_target(), so
+    // color_texture_count stays 0 and destroy never frees the cube map.
+    fb->color_texture_count = 0;
+    fb->depth_texture = NULL;
+    fb->width = 0;
+    fb->height = 0;
+
+    glGenFramebuffers(1, &fb->fbo);
+
+    return fb;
+}
+
+void gl_framebuffer_set_cubemap_target(rhi_framebuffer framebuffer, rhi_texture cubemap,
+                                       uint32 face, uint32 mip)
+{
+    ASSERT(cubemap->target == GL_TEXTURE_CUBE_MAP);
+    ASSERT(face < 6);
+    ASSERT(mip < cubemap->mip_count);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, cubemap->handle, (GLint)mip);
+
+    const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &draw_buffer);
+
+    uint16 size = (uint16)(cubemap->width >> mip);
+    framebuffer->width = size ? size : 1;
+    framebuffer->height = framebuffer->width;
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        FATAL("Cubemap framebuffer incomplete");
+
+    glViewport(0, 0, framebuffer->width, framebuffer->height);
+}

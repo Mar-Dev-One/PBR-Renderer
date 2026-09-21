@@ -33,3 +33,23 @@ image image_load(const char* path, uint8 desired_channels);
 image image_load_from_memory(const uint8* data, uint64 size, uint8 desired_channels);
 
 void  image_free(image* img);
+
+// Decoded floating-point (HDR) image: always 4 channels (RGBA, linear
+// radiance, alpha = 1), 32-bit float per channel. Used for environment maps,
+// where values well above 1.0 (the sun, bright windows) matter.
+typedef struct image_hdr
+{
+    f32*   pixels;   // 4 floats per pixel, row-major, no padding
+    uint16 width;
+    uint16 height;
+} image_hdr;
+
+// Loads a Radiance .hdr file (or any other format stb_image supports, which
+// is converted to linear float). Same bottom-left-origin flip as image_load(),
+// so row 0 is the bottom of the picture.
+//
+// Returns an image with pixels == NULL on failure and logs why. Caller owns
+// image.pixels on success and must free it with image_hdr_free().
+image_hdr image_load_hdr(const char* path);
+
+void image_hdr_free(image_hdr* img);

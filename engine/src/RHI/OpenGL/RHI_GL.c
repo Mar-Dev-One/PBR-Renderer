@@ -26,6 +26,11 @@ b8 gl_init(rhi_proc_loader loader)
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
+    // Filter across cube map face edges instead of clamping within a face --
+    // without it, blurry reflections (high mips of a prefiltered environment)
+    // show visible seams along the cube's edges.
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+
     return true;
 }
 
@@ -101,12 +106,17 @@ void rhi_gl_get_backend(rhi_backend_api* out_api)
     out_api->texture_create = gl_texture_create;
     out_api->texture_destroy = gl_texture_destroy;
 
+    out_api->cubemap_create = gl_cubemap_create;
+    out_api->cubemap_generate_mipmaps = gl_cubemap_generate_mipmaps;
+
     out_api->framebuffer_create = gl_framebuffer_create;
     out_api->framebuffer_bind = gl_framebuffer_bind;
     out_api->framebuffer_bind_default = gl_framebuffer_bind_default;
     out_api->framebuffer_get_color_texture = gl_framebuffer_get_color_texture;
     out_api->framebuffer_get_depth_texture = gl_framebuffer_get_depth_texture;
     out_api->framebuffer_destroy = gl_framebuffer_destroy;
+    out_api->framebuffer_create_cubemap_target = gl_framebuffer_create_cubemap_target;
+    out_api->framebuffer_set_cubemap_target = gl_framebuffer_set_cubemap_target;
 
     out_api->set_render_state = gl_set_render_state;
     out_api->draw_indexed = gl_draw_indexed;
