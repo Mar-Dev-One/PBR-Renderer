@@ -1,0 +1,57 @@
+#include "Lighting.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <cglm/cglm.h>   // glm_rad() -- M_PI isn't standard C and isn't worth chasing a define for
+
+void
+lighting_bind(rhi_shader shader, const scene* s)
+{
+    light lights[LIGHTING_MAX_LIGHTS];
+    vec3  world_positions[LIGHTING_MAX_LIGHTS];
+
+    // scene_gather_lights() only writes world_positions[i] for
+    // LIGHT_POINT/LIGHT_SPOT entries -- zero the rest so a stray
+    // uninitialized position never reaches the shader for a directional
+    // light (harmless either way, since pbr.frag ignores position for
+    // LIGHT_DIRECTIONAL, but zeroed reads better under a debugger).
+    memset(world_positions, 0, sizeof(world_positions));
+
+    uint32 count = scene_gather_lights(s, lights, world_positions, LIGHTING_MAX_LIGHTS);
+
+    rhi_shader_set_int(shader, "u_light_count", (int32)count);
+
+    for (uint32 i = 0; i < count; ++i)
+    {
+        const light* l = &lights[i];
+        char         name[48];
+
+        snprintf(name, sizeof(name), "u_lights[%u].type", i);
+        rhi_shader_set_int(shader, name, (int32)l->type);
+
+        snprintf(name, sizeof(name), "u_lights[%u].color", i);
+        rhi_shader_set_vec3(shader, name, l->color[0], l->color[1], l->color[2]);
+
+        snprintf(name, sizeof(name), "u_lights[%u].intensity", i);
+        rhi_shader_set_float(shader, name, l->intensity);
+
+        snprintf(name, sizeof(name), "u_lights[%u].direction", i);
+        rhi_shader_set_vec3(shader, name, l->direction[0], l->direction[1], l->direction[2]);
+
+        snprintf(name, sizeof(name), "u_lights[%u].position", i);
+        rhi_shader_set_vec3(shader, name, world_positions[i][0], world_positions[i][1], world_positions[i][2]);
+
+        snprintf(name, sizeof(name), "u_lights[%u].range", i);
+        rhi_shader_set_float(shader, name, l->range);
+
+        // Precomputed here (one cosf() per light per frame) rather than in
+        // the shader (one per fragment per light).
+        snprintf(name, sizeof(name), "u_lights[%u].inner_cos", i);
+        rhi_shader_set_float(shader, name, cosf(glm_rad(l->inner_cone_degrees)));
+
+        snprintf(name, sizeof(name), "u_lights[%u].outer_cos", i);
+        rhi_shader_set_float(shader, name, cosf(glm_rad(l->outer_cone_degrees)));
+    }
+}

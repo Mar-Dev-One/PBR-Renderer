@@ -12,6 +12,7 @@
 #include "Core/Paths.h"
 #include "RHI/RHI.h"
 #include "Renderer/IBL.h"
+#include "Renderer/Lighting.h"
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
 #include "Scene/Model.h"
@@ -133,6 +134,19 @@ typedef struct demo_state
     scene demo_scene;
     int32 model_entity;
     int32 light_entity;
+
+    // --- Fill light (point) -------------------------------------------------
+    // A second scene light, demonstrating multi-light support end to end:
+    // position/color/intensity/range are all live-editable via ImGui, same
+    // as the key (directional) light above. Disabled by zeroing intensity
+    // (see sync_scene_lights()) rather than removed -- Scene.h has no
+    // entity-removal call yet (see its ownership note).
+    int32 fill_light_entity;
+    b8    fill_light_enabled;
+    vec3  fill_light_pos;
+    vec3  fill_light_color;
+    f32   fill_light_intensity;
+    f32   fill_light_range;
 
     // --- Shadow mapping ----------------------------------------------------
     // A single directional-light shadow map, re-rendered every frame from
