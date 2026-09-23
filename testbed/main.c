@@ -15,6 +15,7 @@
 #include "Renderer/Renderer.h"
 #include "Scene/Camera.h"
 #include "Scene/Model.h"
+#include "Scene/Scene.h"
 #include "Platform/Window.h"
 #include "UI/ImGuiLayer.h"
 #include "cimgui.h"
@@ -120,6 +121,18 @@ typedef struct demo_state
     f32        light_intensity;
     f32        ambient_strength;
     f32        exposure;
+
+    // --- Scene ---------------------------------------------------------------
+    // scene_model/light_dir above are still the values ImGui edits directly
+    // (sliders bind straight to them, same as before); demo_scene just holds
+    // an ENTITY_MODEL and an ENTITY_LIGHT that mirror them each frame, so
+    // on_frame can draw/gather through Scene.h instead of the single model
+    // and single light uniform set it used to reach for directly. as_model
+    // points at scene_model above, which never moves (same demo_state
+    // address for the app's lifetime), so it's wired up once in on_init().
+    scene demo_scene;
+    int32 model_entity;
+    int32 light_entity;
 
     // --- Shadow mapping ----------------------------------------------------
     // A single directional-light shadow map, re-rendered every frame from
@@ -505,6 +518,19 @@ on_init(App* app)
     state->loaded_model   = -1;
     load_selected_model(state, state->selected_model);
 
+    // --- Scene -------------------------------------------------------------
+    // &state->scene_model is stable for the app's lifetime (load_selected_model()
+    // reloads *into* it, never reallocates it), so the entity can borrow it
+    // once here; on_frame only ever touches local_transform/as_light after
+    // this, never re-adds anything.
+    scene_init(&state->demo_scene);
+
+    state->model_entity = scene_add_model(&state->demo_scene, &state->scene_model, NULL, ENTITY_NO_PARENT);
+
+    light initial_light;
+    light_init_directional(&initial_light, state->light_dir, state->light_color, state->light_intensity);
+    state->light_entity = scene_add_light(&state->demo_scene, initial_light, NULL, ENTITY_NO_PARENT);
+
     f32 aspect = (f32)framebuffer_size.width / (f32)framebuffer_size.height;
 
     vec3 initial_position = { 2.5f, 2.0f, 3.5f };
@@ -769,8 +795,31 @@ static void on_frame(App* app, f32 dt)
                 glm_rotate(world, time * 0.5f, (vec3){ 0.0f, 1.0f, 0.0f });
             glm_mat4_mul(world, state->model_fit, world);
 
-            vec3 light_dir_normalized;
-            glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
+            // Push this frame's GUI-driven values into the scene: the model
+            // entity's placement, and the light entity's parameters (both
+            // entities are unparented, so their local == world transform --
+            // scene_update_world_transforms() below is a no-op for them
+            // today, but keeps this correct the moment either gets a
+            // parent).
+            glm_mat4_copy(world, state->demo_scene.entities[state->model_entity].local_transform);
+
+            light* scene_light = &state->demo_scene.entities[state->light_entity].as_light;
+            glm_vec3_normalize_to(state->light_dir, scene_light->direction);
+            glm_vec3_copy(state->light_color, scene_light->color);
+            scene_light->intensity = state->light_intensity;
+
+            scene_update_world_transforms(&state->demo_scene);
+
+            // Single-light bridge: pbr.frag still takes exactly one
+            // hardcoded directional light (see Renderer/Scene.h's note on
+            // scene_gather_lights), so pull just the one light this demo
+            // has out of the scene rather than reading state->light_dir/
+            // light_color/light_intensity directly -- this is the seam a
+            // future multi-light pbr.frag hangs off instead of another pass
+            // over this file.
+            light gathered_lights[1];
+            scene_gather_lights(&state->demo_scene, gathered_lights, NULL, 1);
+            f32* light_dir_normalized = gathered_lights[0].direction;   // already normalized, see light_init_directional()
 
             // --- Shadow pass -----------------------------------------------
             // A directional light has no position, so the shadow camera is
@@ -803,7 +852,7 @@ static void on_frame(App* app, f32 dt)
                 rhi_clear(0.0f, 0.0f, 0.0f, 1.0f);   // color ignored (no color attachment); this also clears depth to 1.0
 
                 rhi_shader_bind(state->shadow_shader);
-                model_draw_depth(&state->scene_model, state->shadow_shader, world, state->light_view_projection);
+                scene_draw_models_depth(&state->demo_scene, state->shadow_shader, state->light_view_projection);
 
                 rhi_framebuffer_bind_default();
             }
@@ -845,8 +894,10 @@ static void on_frame(App* app, f32 dt)
             rhi_texture_bind(rhi_framebuffer_get_depth_texture(state->shadow_map), MATERIAL_SLOT_COUNT);
 
             // u_model / u_normal_matrix and every material uniform + texture
-            // binding are set per submesh inside model_draw().
-            model_draw(&state->scene_model, shader, world);
+            // binding are set per submesh inside model_draw() (called once
+            // per ENTITY_MODEL by scene_draw_models() -- just the one
+            // model_entity today, but N from here on costs nothing extra).
+            scene_draw_models(&state->demo_scene, shader);
 
             if (state->show_ground)
             {
@@ -948,6 +999,7 @@ static void on_shutdown(App* app)
     for (uint32 i = 0; i < TEXTURE_COUNT; ++i)
         rhi_texture_destroy(state->textures[i]);
 
+    scene_destroy(&state->demo_scene);   // borrows scene_model, frees nothing but its own entity array
     model_destroy(&state->scene_model);
     mesh_destroy(&state->ground_mesh);
     material_destroy(&state->ground_material);

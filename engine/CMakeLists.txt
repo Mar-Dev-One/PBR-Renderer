@@ -13,9 +13,11 @@ add_library(PBR_Engine STATIC
     src/RHI/OpenGL/RHI_GL_Framebuffer.c
     src/Platform/Window.c
     src/Scene/Camera.c
+    src/Scene/Light.c
     src/Scene/Mesh.c
     src/Scene/Material.c
     src/Scene/Model.c
+    src/Scene/Scene.c
     src/Scene/ModelObj.c
     src/Scene/ModelGltf.c
     src/UI/ImGuiLayer.c
