@@ -14,6 +14,7 @@
 #include "Renderer/IBL.h"
 #include "Renderer/Lighting.h"
 #include "Renderer/Renderer.h"
+#include "Renderer/Shadow.h"
 #include "Scene/Camera.h"
 #include "Scene/Model.h"
 #include "Scene/Scene.h"
@@ -84,9 +85,11 @@ static const char* HDRI_NAMES[] = {
 
 #define HDRI_COUNT (sizeof(HDRI_PATHS) / sizeof(HDRI_PATHS[0]))
 
-// Resolution of the directional light's shadow map. A depth-only
-// framebuffer, so this is cheap to size generously.
+// Resolution of *each* cascade's shadow map (Renderer/Shadow.h). Depth-only
+// framebuffers are cheap, so this and CASCADE_COUNT are both sized
+// generously; CASCADE_COUNT tops out at CSM_MAX_CASCADES.
 #define SHADOW_MAP_SIZE 2048
+#define CASCADE_COUNT   4
 
 // Which of the two demo scenes on_frame draws this frame -- both share the
 // same camera/orbit controls, only the geometry/shader/GUI panel differ.
@@ -149,12 +152,12 @@ typedef struct demo_state
     f32   fill_light_range;
 
     // --- Shadow mapping ----------------------------------------------------
-    // A single directional-light shadow map, re-rendered every frame from
-    // model_draw_depth() before the lit pass (light_dir can change live via
-    // the GUI, so the light camera can't be baked once at load time).
-    rhi_shader      shadow_shader;
-    rhi_framebuffer shadow_map;
-    mat4            light_view_projection;   // light's view * projection, recomputed each frame
+    // Cascaded shadow maps (Renderer/Shadow.h) for the key directional
+    // light, re-fit and re-rendered every frame -- both the camera (orbit
+    // controls) and light_dir (live via the GUI) can change frame to
+    // frame, so the cascades can't be baked once at load time.
+    csm_state csm;
+    b8        debug_show_cascades;   // tints shading by cascade index; see pbr.frag's u_debug_show_cascades
 
     // --- Image-based lighting -----------------------------------------------
     // Baked from an HDRI (Renderer/IBL.h) and read by pbr.frag for ambient
@@ -453,31 +456,16 @@ on_init(App* app)
     if (!state->pbr_shader)
         FATAL("demo: failed to load PBR shader");
 
-    char* shadow_vertex_path   = asset_path("shaders/shadow_depth.vert");
-    char* shadow_fragment_path = asset_path("shaders/shadow_depth.frag");
+    if (!csm_create(&state->csm, CASCADE_COUNT, SHADOW_MAP_SIZE))
+        FATAL("demo: failed to create cascaded shadow maps");
 
-    state->shadow_shader = rhi_shader_create_from_files(shadow_vertex_path, shadow_fragment_path);
-
-    free(shadow_vertex_path);
-    free(shadow_fragment_path);
-
-    if (!state->shadow_shader)
-        FATAL("demo: failed to load shadow depth shader");
-
-    rhi_framebuffer_desc shadow_fb_desc = {
-        .width = SHADOW_MAP_SIZE,
-        .height = SHADOW_MAP_SIZE,
-        .color_attachments = NULL,
-        .color_attachment_count = 0,
-        .has_depth_attachment = true   // depth-only target -- see RHI.h
-    };
-    state->shadow_map = rhi_framebuffer_create(shadow_fb_desc);
-
-    // Fixed texture unit for the shadow map, one past Material.h's five
-    // material slots (MATERIAL_SLOT_COUNT) so material_bind() never binds
-    // over it -- set once here rather than every frame, same reasoning as
-    // the textured-cube demo's u_texture below.
-    rhi_shader_set_int(state->pbr_shader, "u_shadow_map", MATERIAL_SLOT_COUNT);
+    // Cascade texture units (CSM_SLOT_FIRST..+CSM_MAX_CASCADES-1) sit right
+    // after Material.h's five material slots (MATERIAL_SLOT_COUNT) so
+    // material_bind() never binds over them -- csm_bind() rebinds the
+    // actual textures every frame (shadow map contents change), but the
+    // sampler-to-unit assignment itself is also just set there each frame
+    // since it's cheap and keeps all of csm_bind()'s uniform-setting in one
+    // place rather than splitting setup between on_init() and on_frame().
 
     state->grid_albedo[0] = state->grid_albedo[1] = state->grid_albedo[2] = 0.9f;
 
@@ -671,16 +659,6 @@ draw_material_grid(demo_state* state, const mat4 view_projection)
         ibl_draw_skybox(&state->ibl, view, projection, state->exposure, state->sky_blur);
     }
 
-    // The demo is about ambient light, so nothing casts shadows: clear the
-    // shadow map to "nothing blocks the light" (depth 1.0) and use an identity
-    // light matrix so the shader's lookup lands inside it and says lit.
-    rhi_framebuffer_bind(state->shadow_map);
-    rhi_clear(0.0f, 0.0f, 0.0f, 1.0f);
-    rhi_framebuffer_bind_default();
-
-    mat4 identity;
-    glm_mat4_identity(identity);
-
     vec3 light_dir_normalized;
     glm_vec3_normalize_to(state->light_dir, light_dir_normalized);
 
@@ -688,7 +666,6 @@ draw_material_grid(demo_state* state, const mat4 view_projection)
 
     rhi_shader_bind(shader);
     rhi_shader_set_mat4(shader, "u_view_projection", (const f32*)view_projection);
-    rhi_shader_set_mat4(shader, "u_light_view_projection", (const f32*)identity);
     rhi_shader_set_vec3(shader, "u_light_dir",
                          light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
     rhi_shader_set_vec3(shader, "u_light_color",
@@ -699,8 +676,14 @@ draw_material_grid(demo_state* state, const mat4 view_projection)
     rhi_shader_set_float(shader, "u_ambient_strength", state->ambient_strength);
     rhi_shader_set_float(shader, "u_exposure", state->exposure);
 
+    // The demo is about ambient light: rather than fit and render cascades
+    // for it, just tell the shader nothing casts a shadow (see pbr.frag's
+    // pick_cascade()) -- cheaper than the single-shadow-map version's
+    // old trick of rendering an empty shadow map with an identity light
+    // matrix, and needs no framebuffer bound at all.
+    rhi_shader_set_int(shader, "u_cascade_count", 0);
+
     ibl_bind(state->ibl_enabled ? &state->ibl : NULL, shader);
-    rhi_texture_bind(rhi_framebuffer_get_depth_texture(state->shadow_map), MATERIAL_SLOT_COUNT);
 
     // sphere.obj has no material of its own, so every submesh uses
     // default_material: rewrite it between draws. The picker shows sRGB,
@@ -836,40 +819,14 @@ static void on_frame(App* app, f32 dt)
             f32* light_dir_normalized = gathered_lights[0].direction;   // already normalized, see light_init_directional()
 
             // --- Shadow pass -----------------------------------------------
-            // A directional light has no position, so the shadow camera is
-            // placed back along -light_dir far enough to see the whole
-            // model, looking at the origin -- model_get_fit_transform()
-            // above always centres the model there with a bounding sphere
-            // radius of at most sqrt(3) (target_size 2.0 -> half-extent 1.0
-            // per axis), so a fixed orthographic box comfortably covers any
-            // model this viewer can load without per-model recalculation.
-            {
-                const f32 shadow_distance = 6.0f;
-                const f32 shadow_radius   = 2.0f;
-
-                vec3 light_eye;
-                glm_vec3_scale(light_dir_normalized, -shadow_distance, light_eye);
-
-                // glm_lookat degenerates when its view direction is parallel
-                // to `up` (light pointing straight down/up); swap axes then.
-                vec3 up = { 0.0f, 1.0f, 0.0f };
-                if (fabsf(glm_vec3_dot(light_dir_normalized, up)) > 0.999f)
-                    glm_vec3_copy((vec3){ 0.0f, 0.0f, 1.0f }, up);
-
-                mat4 light_view, light_proj;
-                glm_lookat(light_eye, (vec3){ 0.0f, 0.0f, 0.0f }, up, light_view);
-                glm_ortho(-shadow_radius, shadow_radius, -shadow_radius, shadow_radius,
-                          0.1f, shadow_distance + shadow_radius + 1.0f, light_proj);
-                glm_mat4_mul(light_proj, light_view, state->light_view_projection);
-
-                rhi_framebuffer_bind(state->shadow_map);
-                rhi_clear(0.0f, 0.0f, 0.0f, 1.0f);   // color ignored (no color attachment); this also clears depth to 1.0
-
-                rhi_shader_bind(state->shadow_shader);
-                scene_draw_models_depth(&state->demo_scene, state->shadow_shader, state->light_view_projection);
-
-                rhi_framebuffer_bind_default();
-            }
+            // Re-fit every cascade to this frame's camera + light_dir, then
+            // render each one's depth pass. See Renderer/Shadow.h for how
+            // the fit itself works; unlike the old single fixed-radius-2
+            // ortho box, this tracks the camera instead of the model, so it
+            // scales to whatever the camera can see rather than whatever
+            // model_get_fit_transform() happened to fit into a 2-unit cube.
+            csm_update(&state->csm, &state->cam, light_dir_normalized, 0.5f);
+            csm_render(&state->csm, &state->demo_scene);
 
             // Background first: it writes no depth, and blended materials drawn
             // below need the sky already behind them.
@@ -884,9 +841,13 @@ static void on_frame(App* app, f32 dt)
 
             rhi_shader shader = state->pbr_shader;
 
+            mat4 view_only;
+            camera_get_view(&state->cam, view_only);
+
             rhi_shader_bind(shader);
             rhi_shader_set_mat4(shader, "u_view_projection", (const f32*)view_projection);
-            rhi_shader_set_mat4(shader, "u_light_view_projection", (const f32*)state->light_view_projection);
+            rhi_shader_set_mat4(shader, "u_view", (const f32*)view_only);   // pbr.vert: v_view_depth, for cascade selection
+            rhi_shader_set_int(shader, "u_debug_show_cascades", state->debug_show_cascades);
             rhi_shader_set_vec3(shader, "u_light_dir",
                                  light_dir_normalized[0], light_dir_normalized[1], light_dir_normalized[2]);
             rhi_shader_set_vec3(shader, "u_light_color",
@@ -899,13 +860,16 @@ static void on_frame(App* app, f32 dt)
 
             // Ambient light: baked IBL when enabled, else the shader's
             // hemisphere fallback. Uses IBL_SLOT_* texture units, clear of
-            // the material slots and the shadow map.
+            // the material slots and the shadow cascades.
             ibl_bind(state->ibl_enabled ? &state->ibl : NULL, shader);
 
-            // Fixed unit set once in on_init(); only the actual binding needs
-            // to happen here, and only once per frame -- material_bind()
-            // inside model_draw() below never touches this unit.
-            rhi_texture_bind(rhi_framebuffer_get_depth_texture(state->shadow_map), MATERIAL_SLOT_COUNT);
+            // Binds every cascade's depth texture to its fixed unit
+            // (CSM_SLOT_FIRST..+CSM_MAX_CASCADES-1, clear of the material
+            // slots -- material_bind() inside model_draw() below never
+            // touches them) and sets the matching u_shadow_maps[]/
+            // u_light_view_projection[]/u_cascade_splits[]/u_cascade_count
+            // uniforms.
+            csm_bind(&state->csm, shader);
 
             // u_model / u_normal_matrix and every material uniform + texture
             // binding are set per submesh inside model_draw() (called once
@@ -928,9 +892,9 @@ static void on_frame(App* app, f32 dt)
                 rhi_shader_set_mat4(shader, "u_model", (const f32*)ground_world);
                 rhi_shader_set_mat4(shader, "u_normal_matrix", (const f32*)ground_normal_matrix);
 
-                // The shadow map is already bound to its fixed unit from
-                // above model_draw() and material_bind() never touches it,
-                // so it's still in place here -- no rebind needed.
+                // The cascades are already bound to their fixed units from
+                // csm_bind() above and material_bind() never touches them,
+                // so they're still in place here -- no rebind needed.
                 material_bind(&state->ground_material, shader, false);
                 mesh_draw(&state->ground_mesh);
 
@@ -992,6 +956,7 @@ static void on_frame(App* app, f32 dt)
 
         igCheckbox("Spin", &state->spin);
         igCheckbox("Ground plane", &state->show_ground);
+        igCheckbox("Debug: show shadow cascades", &state->debug_show_cascades);
         igSeparator();
 
         draw_lighting_controls(state);
@@ -1019,8 +984,7 @@ static void on_shutdown(App* app)
     material_destroy(&state->ground_material);
     model_destroy(&state->grid_model);
     ibl_destroy(&state->ibl);
-    rhi_framebuffer_destroy(state->shadow_map);
-    rhi_shader_destroy(state->shadow_shader);
+    csm_destroy(&state->csm);
     rhi_shader_destroy(state->pbr_shader);
 
     rhi_shader_destroy(state->shader);

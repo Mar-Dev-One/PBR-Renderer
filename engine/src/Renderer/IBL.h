@@ -18,11 +18,13 @@
 // split-sum approximation is not a texture here -- pbr.frag evaluates it with
 // an analytic fit (env_brdf_approx).
 
-// Texture units the maps live on when bound for drawing. Material.h owns 0..4
-// and the testbed puts the shadow map on 5, so IBL starts at 6.
-#define IBL_SLOT_IRRADIANCE   6
-#define IBL_SLOT_PREFILTERED  7
-#define IBL_SLOT_ENVIRONMENT  8   // only bound while the skybox is drawn
+// Texture units the maps live on when bound for drawing. Material.h owns
+// 0..4 (MATERIAL_SLOT_COUNT) and Shadow.h's cascades own
+// CSM_SLOT_FIRST..CSM_SLOT_FIRST+CSM_MAX_CASCADES-1 (5..8), so IBL starts
+// right after those.
+#define IBL_SLOT_IRRADIANCE   9
+#define IBL_SLOT_PREFILTERED  10
+#define IBL_SLOT_ENVIRONMENT  11   // only bound while the skybox is drawn
 
 typedef struct ibl_environment
 {

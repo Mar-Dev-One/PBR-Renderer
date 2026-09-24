@@ -8,11 +8,16 @@
 // Output is tone-mapped and gamma-encoded, so it goes straight to the
 // (non-sRGB) default framebuffer.
 
+// Must match pbr.vert's #define of the same name (and Renderer/Shadow.h's
+// CSM_MAX_CASCADES on the C side) -- see pbr.vert's comment.
+#define CSM_MAX_CASCADES 4
+
 in vec3 v_world_pos;
 in vec3 v_normal;
 in vec4 v_tangent;
 in vec2 v_uv;
-in vec4 v_light_space_pos;
+in vec4 v_light_space_pos[CSM_MAX_CASCADES];
+in float v_view_depth;
 
 out vec4 frag_color;
 
@@ -41,7 +46,19 @@ uniform vec3  u_view_pos;
 uniform float u_ambient_strength;
 uniform float u_exposure;
 
-uniform sampler2D u_shadow_map;    // depth-only, rendered by model_draw_depth() from the light's view
+// Cascaded shadow maps (Renderer/Shadow.h): one depth-only texture per
+// cascade, near cascades first. u_cascade_splits[i] is the view-space
+// (camera-forward-axis) distance where cascade i's coverage ends -- see
+// pick_cascade() below. Entries >= u_cascade_count are unused.
+uniform sampler2D u_shadow_maps[CSM_MAX_CASCADES];
+uniform float     u_cascade_splits[CSM_MAX_CASCADES];
+uniform int       u_cascade_count;
+
+// Debug aid: tints each fragment by which cascade it landed in (cascade 0 =
+// red, through to blue) so the split scheme/fit can be sanity-checked
+// visually. Off (0) by default; Shadow.h doesn't set this itself, so it
+// stays 0 unless something explicitly opts in.
+uniform int u_debug_show_cascades;
 
 // --- Image-based lighting (set by ibl_bind, see Renderer/IBL.h) ---------------
 uniform int         u_use_ibl;              // 0 = hemisphere fallback below
@@ -87,11 +104,37 @@ vec3 env_brdf_approx(vec3 specular_color, float roughness, float NoV)
     return specular_color * ab.x + ab.y;
 }
 
-// PCF-filtered shadow test. Returns 0 = fully lit .. 1 = fully shadowed.
-// `NoL` drives a slope-scaled bias: surfaces nearly edge-on to the light
-// need more bias than ones facing it head-on, or they self-shadow in
-// stripes ("shadow acne").
-float shadow_calculation(vec4 light_space_pos, float NoL)
+// Which cascade a fragment at this view-space depth falls into -- the
+// first one whose split_far (u_cascade_splits[i]) hasn't been passed yet,
+// or the last cascade if the fragment is beyond every split (happens for
+// depths between the camera's actual far plane and whatever the last
+// cascade's ortho box still covers; clamping to the last cascade there
+// beats an unshadowed fragment).
+// Returns -1 (no cascade / nothing casts a shadow) when u_cascade_count is
+// 0 -- draw_material_grid() (testbed/main.c) uses that to light its sphere
+// grid without a shadow pass, rather than routing through a dummy
+// always-lit cascade the way the single-shadow-map version used an
+// identity light matrix for the same purpose.
+int pick_cascade(float view_depth)
+{
+    for (int i = 0; i < u_cascade_count; ++i)
+    {
+        if (view_depth < u_cascade_splits[i])
+            return i;
+    }
+    return u_cascade_count - 1;
+}
+
+// PCF-filtered shadow test against cascade `cascade_index`. Returns 0 =
+// fully lit .. 1 = fully shadowed. `NoL` drives a slope-scaled bias:
+// surfaces nearly edge-on to the light need more bias than ones facing it
+// head-on, or they self-shadow in stripes ("shadow acne"). `cascade_index`
+// is a per-fragment runtime value (fragments in the same draw call can land
+// in different cascades near a split boundary), so this indexes
+// u_shadow_maps[] dynamically -- supported on the desktop GL 4.60 core
+// profile this project targets (unlike GLSL ES, core desktop GLSL doesn't
+// require sampler-array indices to be dynamically uniform).
+float shadow_calculation(vec4 light_space_pos, float NoL, int cascade_index)
 {
     // Perspective divide -- a no-op for the orthographic light projection
     // used today, but harmless and keeps this correct if that ever changes
@@ -99,21 +142,24 @@ float shadow_calculation(vec4 light_space_pos, float NoL)
     vec3 proj = light_space_pos.xyz / light_space_pos.w;
     proj = proj * 0.5 + 0.5;   // clip space [-1,1] -> depth-map/UV space [0,1]
 
-    // Outside the light's frustum (or beyond its far plane): nothing known
-    // about occluders there, so don't shadow it.
+    // Outside this cascade's frustum (or beyond its far plane): nothing
+    // known about occluders there, so don't shadow it. pick_cascade()
+    // keeps this rare in practice -- it only fires right at a cascade's
+    // edge, where the neighboring cascade's PCF kernel reads a couple of
+    // texels past this one's tightly-fit box.
     if (proj.z > 1.0 || proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0)
         return 0.0;
 
     float bias = max(0.0025 * (1.0 - NoL), 0.0006);
 
-    vec2  texel  = 1.0 / vec2(textureSize(u_shadow_map, 0));
+    vec2  texel  = 1.0 / vec2(textureSize(u_shadow_maps[cascade_index], 0));
     float shadow = 0.0;
 
     for (int x = -1; x <= 1; ++x)
     {
         for (int y = -1; y <= 1; ++y)
         {
-            float closest_depth = texture(u_shadow_map, proj.xy + vec2(x, y) * texel).r;
+            float closest_depth = texture(u_shadow_maps[cascade_index], proj.xy + vec2(x, y) * texel).r;
             shadow += (proj.z - bias > closest_depth) ? 1.0 : 0.0;
         }
     }
@@ -196,7 +242,8 @@ void main()
     vec3 specular = distribution_ggx(NoH, alpha) * visibility_smith_ggx(NoV, NoL, alpha) * F;
     vec3 diffuse  = (1.0 - F) * diffuse_color / PI;
 
-    float shadow = shadow_calculation(v_light_space_pos, NoL);
+    int   cascade_index = pick_cascade(v_view_depth);
+    float shadow        = cascade_index >= 0 ? shadow_calculation(v_light_space_pos[cascade_index], NoL, cascade_index) : 0.0;
     vec3  direct = (diffuse + specular) * u_light_color * u_light_intensity * NoL * (1.0 - shadow);
 
     // --- Ambient --------------------------------------------------------------------
@@ -223,6 +270,18 @@ void main()
 
     color = aces_tonemap(color * u_exposure);
     color = pow(color, vec3(1.0 / 2.2));
+
+    // Debug: overlay a per-cascade tint (red -> green -> blue -> yellow,
+    // CSM_MAX_CASCADES == 4) so a cascade fit/split problem shows up as a
+    // wrong-looking color band instead of having to guess from shadow
+    // artifacts alone.
+    if (u_debug_show_cascades != 0 && cascade_index >= 0)
+    {
+        const vec3 cascade_tints[CSM_MAX_CASCADES] = vec3[](
+            vec3(1.0, 0.3, 0.3), vec3(0.3, 1.0, 0.3), vec3(0.3, 0.3, 1.0), vec3(1.0, 1.0, 0.3)
+        );
+        color = mix(color, cascade_tints[cascade_index], 0.35);
+    }
 
     frag_color = vec4(color, u_alpha_mode == 2 ? base.a : 1.0);
 }

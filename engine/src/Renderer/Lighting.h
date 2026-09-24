@@ -22,8 +22,9 @@
 // to have been called on `s` this frame -- same requirement as
 // scene_gather_lights() itself.
 //
-// Shadowing: pbr.frag only shadow-tests u_lights[0] against u_shadow_map.
-// That is whichever ENTITY_LIGHT was added to the scene first (storage
-// order, see Scene.h) -- add the shadow-casting key light before any other
-// light entity until multiple shadow maps exist.
+// Shadowing: pbr.frag only shadow-tests against the cascades Renderer/
+// Shadow.h builds for one directional light (see csm_update()), whichever
+// ENTITY_LIGHT was added to the scene first (storage order, see Scene.h) --
+// add the shadow-casting key light before any other light entity until
+// per-light shadow maps exist.
 void lighting_bind(rhi_shader shader, const scene* s);
