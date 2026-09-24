@@ -5,18 +5,20 @@
 
 #include <cglm/cglm.h>
 
-// Image-based lighting: turns an equirectangular HDR panorama into the three
-// things a PBR shader needs to light a surface from "everywhere at once", plus
-// a skybox to look at it.
+// Image-based lighting: turns an equirectangular HDR panorama into the things
+// a PBR shader needs to light a surface from "everywhere at once", plus a
+// skybox to look at it.
 //
 //   environment  the panorama as a cube map with a mip chain (the sky itself)
 //   irradiance   32^2 cube map: diffuse light arriving from each direction
 //   prefiltered  128^2 cube map: mip N = the environment blurred by the GGX
 //                specular lobe of roughness N / (mip_count - 1)
+//   brdf_lut     256^2 RG16F texture: the BRDF half of the split-sum
+//                approximation. u = N.V, v = perceptual roughness; R = scale
+//                and G = bias applied to F0 (F0 * R + G). It doesn't depend on
+//                the panorama, but is baked with the other maps in ibl_create().
 //
-// Baking happens once, on the GPU, inside ibl_create(). The BRDF half of the
-// split-sum approximation is not a texture here -- pbr.frag evaluates it with
-// an analytic fit (env_brdf_approx).
+// Baking happens once, on the GPU, inside ibl_create().
 
 // Texture units the maps live on when bound for drawing. Material.h owns
 // 0..4 (MATERIAL_SLOT_COUNT) and Shadow.h's cascades own
@@ -25,14 +27,20 @@
 #define IBL_SLOT_IRRADIANCE   9
 #define IBL_SLOT_PREFILTERED  10
 #define IBL_SLOT_ENVIRONMENT  11   // only bound while the skybox is drawn
+#define IBL_SLOT_BRDF_LUT     12
 
 typedef struct ibl_environment
 {
     rhi_texture environment;
     rhi_texture irradiance;
     rhi_texture prefiltered;
+    rhi_texture brdf_lut;          // borrowed from brdf_lut_target; don't destroy it directly
     uint32      environment_mip_count;
     uint32      prefiltered_mip_count;
+
+    // Owns brdf_lut's storage (the RHI only creates 2D textures as framebuffer
+    // attachments); ibl_destroy() frees the texture by destroying this.
+    rhi_framebuffer brdf_lut_target;
 
     // Skybox drawing resources, kept for the environment's lifetime.
     rhi_buffer  cube_vertices;
@@ -53,8 +61,8 @@ b8   ibl_create(ibl_environment* ibl, const char* hdr_path);
 void ibl_destroy(ibl_environment* ibl);
 
 // Per-frame setup for the PBR shader (assets/shaders/pbr.frag): binds the
-// irradiance and prefiltered maps to IBL_SLOT_* and sets its u_use_ibl,
-// u_irradiance_map, u_prefiltered_map and u_prefiltered_max_lod uniforms.
+// irradiance, prefiltered and BRDF LUT maps to IBL_SLOT_* and sets its u_use_ibl,
+// u_irradiance_map, u_prefiltered_map, u_prefiltered_max_lod and u_brdf_lut uniforms.
 // Pass ibl = NULL (or a failed environment) to switch the shader back to its
 // built-in hemisphere ambient; the sampler uniforms are still pointed at
 // their own units so the program stays valid to draw with.

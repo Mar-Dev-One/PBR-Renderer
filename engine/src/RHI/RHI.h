@@ -51,6 +51,7 @@ typedef enum rhi_texture_format
                            // to linear on sample -- use for albedo/emissive images so lighting math
                            // runs in linear space. Alpha stays linear.
     RHI_FORMAT_RGBA16F,    // HDR color (lighting accumulation, IBL, HDR framebuffers)
+    RHI_FORMAT_RG16F,      // two half-float channels (the split-sum BRDF lookup table)
     RHI_FORMAT_DEPTH24     // depth attachment (shadow maps, depth pre-pass)
 } rhi_texture_format;
 

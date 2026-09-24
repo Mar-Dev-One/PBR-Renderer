@@ -32,6 +32,12 @@ gl_texture_format_info(rhi_texture_format format,
             *out_upload_type = GL_FLOAT;
             return;
 
+        case RHI_FORMAT_RG16F:
+            *out_internal_format = GL_RG16F;
+            *out_upload_format = GL_RG;
+            *out_upload_type = GL_FLOAT;
+            return;
+
         case RHI_FORMAT_DEPTH24:
             *out_internal_format = GL_DEPTH_COMPONENT24;
             *out_upload_format = GL_DEPTH_COMPONENT;

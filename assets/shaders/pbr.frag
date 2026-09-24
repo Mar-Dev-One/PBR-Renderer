@@ -62,9 +62,10 @@ uniform int u_debug_show_cascades;
 
 // --- Image-based lighting (set by ibl_bind, see Renderer/IBL.h) ---------------
 uniform int         u_use_ibl;              // 0 = hemisphere fallback below
-uniform samplerCube u_irradiance_map;       // slot 6, diffuse irradiance / pi
-uniform samplerCube u_prefiltered_map;      // slot 7, mip N = GGX-blurred at roughness N / max_lod
+uniform samplerCube u_irradiance_map;       // slot 9, diffuse irradiance / pi
+uniform samplerCube u_prefiltered_map;      // slot 10, mip N = GGX-blurred at roughness N / max_lod
 uniform float       u_prefiltered_max_lod;  // last mip index of u_prefiltered_map
+uniform sampler2D   u_brdf_lut;             // slot 12, split-sum BRDF: (N.V, roughness) -> (F0 scale, bias)
 
 const float PI = 3.14159265359;
 
@@ -92,8 +93,9 @@ vec3 fresnel_schlick(float VoH, vec3 f0)
     return f0 + (1.0 - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
 }
 
-// Analytic fit of the split-sum environment BRDF (Karis, mobile PBR) --
-// avoids needing a lookup texture.
+// Analytic fit of the split-sum environment BRDF (Karis, mobile PBR). Only
+// used by the hemisphere fallback below, where no baked environment (and so no
+// u_brdf_lut) exists; the IBL path samples the baked LUT instead.
 vec3 env_brdf_approx(vec3 specular_color, float roughness, float NoV)
 {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572,  0.022);
@@ -251,19 +253,24 @@ void main()
 
     vec3 irradiance;
     vec3 reflection;
+    vec3 env_brdf;   // split-sum specular factor: F0 * scale + bias
     if (u_use_ibl != 0)
     {
         irradiance = texture(u_irradiance_map, N).rgb;
         reflection = textureLod(u_prefiltered_map, R, roughness * u_prefiltered_max_lod).rgb;
+
+        vec2 ab = texture(u_brdf_lut, vec2(NoV, roughness)).rg;
+        env_brdf = f0 * ab.x + ab.y;
     }
     else
     {
         // Hemisphere stand-in used until an environment is loaded.
         irradiance = hemisphere(N);
         reflection = mix(hemisphere(R), irradiance, roughness);   // rougher = blurrier = closer to the average
+        env_brdf   = env_brdf_approx(f0, roughness, NoV);
     }
 
-    vec3 ambient = (diffuse_color * irradiance + reflection * env_brdf_approx(f0, roughness, NoV))
+    vec3 ambient = (diffuse_color * irradiance + reflection * env_brdf)
                  * occlusion * u_ambient_strength;
 
     vec3 color = direct + ambient + emissive;

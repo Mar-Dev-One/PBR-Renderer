@@ -11,8 +11,21 @@
 #define IBL_IRRADIANCE_SIZE   32
 #define IBL_PREFILTER_SIZE    128
 #define IBL_PREFILTER_MIPS    5    // 128, 64, 32, 16, 8 -> roughness 0, .25, .5, .75, 1
+#define IBL_BRDF_LUT_SIZE     256
 
 #define CUBE_INDEX_COUNT 36
+#define QUAD_INDEX_COUNT 6
+
+// Clip-space quad for the BRDF LUT pass (vertex attribute 0 = vec2, matching
+// brdf_lut.vert); the shader derives its [0, 1] uv from the position.
+static const f32 QUAD_VERTICES[] = {
+    -1.0f, -1.0f,
+     1.0f, -1.0f,
+     1.0f,  1.0f,
+    -1.0f,  1.0f,
+};
+
+static const uint32 QUAD_INDICES[QUAD_INDEX_COUNT] = { 0, 1, 2,  2, 3, 0 };
 
 // [-1, 1] cube, positions only (vertex attribute 0, matching ibl_cube.vert
 // and skybox.vert). Both bake and skybox draw it with culling off, so winding
@@ -112,7 +125,7 @@ b8 ibl_create(ibl_environment* ibl, const char* hdr_path)
 
     rhi_texture     equirect = NULL;
     rhi_framebuffer target   = NULL;
-    rhi_shader      equirect_shader = NULL, irradiance_shader = NULL, prefilter_shader = NULL;
+    rhi_shader      equirect_shader = NULL, irradiance_shader = NULL, prefilter_shader = NULL, brdf_shader = NULL;
 
     rhi_vertex_attribute position_attribute = { .location = 0, .component_count = 3, .offset = 0 };
     rhi_vertex_layout    cube_layout = {
@@ -139,9 +152,10 @@ b8 ibl_create(ibl_environment* ibl, const char* hdr_path)
     equirect_shader   = load_shader("shaders/ibl_cube.vert", "shaders/equirect_to_cube.frag");
     irradiance_shader = load_shader("shaders/ibl_cube.vert", "shaders/irradiance.frag");
     prefilter_shader  = load_shader("shaders/ibl_cube.vert", "shaders/prefilter.frag");
+    brdf_shader       = load_shader("shaders/brdf_lut.vert", "shaders/brdf_lut.frag");
     ibl->skybox_shader = load_shader("shaders/skybox.vert", "shaders/skybox.frag");
 
-    if (!equirect_shader || !irradiance_shader || !prefilter_shader || !ibl->skybox_shader)
+    if (!equirect_shader || !irradiance_shader || !prefilter_shader || !brdf_shader || !ibl->skybox_shader)
         goto fail;
 
     ibl->environment_mip_count = mip_count_for(IBL_ENVIRONMENT_SIZE);
@@ -190,6 +204,27 @@ b8 ibl_create(ibl_environment* ibl, const char* hdr_path)
         bake_faces(ibl, target, prefilter_shader, ibl->prefiltered, mip);
     }
 
+    // 4. Split-sum BRDF lookup: a fullscreen quad into a 2D RG16F target
+    //    (N.V across, roughness up). Kept alive with the environment; it
+    //    is what pbr.frag samples instead of an analytic fit.
+    rhi_framebuffer_attachment lut_attachment = { .format = RHI_FORMAT_RG16F };
+    ibl->brdf_lut_target = rhi_framebuffer_create((rhi_framebuffer_desc){
+        .width = IBL_BRDF_LUT_SIZE, .height = IBL_BRDF_LUT_SIZE,
+        .color_attachments = &lut_attachment, .color_attachment_count = 1,
+        .has_depth_attachment = false });
+    ibl->brdf_lut = rhi_framebuffer_get_color_texture(ibl->brdf_lut_target, 0);
+
+    rhi_vertex_attribute quad_attribute = { .location = 0, .component_count = 2, .offset = 0 };
+    rhi_vertex_layout    quad_layout = { .attributes = &quad_attribute, .attribute_count = 1, .stride = 2 * sizeof(f32) };
+    rhi_buffer quad_vertices = rhi_vertex_buffer_create(QUAD_VERTICES, sizeof(QUAD_VERTICES), &quad_layout, RHI_USAGE_STATIC);
+    rhi_buffer quad_indices  = rhi_index_buffer_create(QUAD_INDICES, sizeof(QUAD_INDICES), RHI_USAGE_STATIC);
+
+    rhi_framebuffer_bind(ibl->brdf_lut_target);
+    rhi_shader_bind(brdf_shader);
+    rhi_draw_indexed(quad_vertices, quad_indices, QUAD_INDEX_COUNT);
+    rhi_buffer_destroy(quad_vertices);
+    rhi_buffer_destroy(quad_indices);
+
     rhi_framebuffer_bind_default();
     rhi_set_render_state(rhi_render_state_default());
 
@@ -197,6 +232,7 @@ b8 ibl_create(ibl_environment* ibl, const char* hdr_path)
     rhi_shader_destroy(equirect_shader);
     rhi_shader_destroy(irradiance_shader);
     rhi_shader_destroy(prefilter_shader);
+    rhi_shader_destroy(brdf_shader);
     rhi_texture_destroy(equirect);
 
     LOG_INFO("IBL: baked '%s'\n", hdr_path);
@@ -207,6 +243,7 @@ fail:
     rhi_shader_destroy(equirect_shader);
     rhi_shader_destroy(irradiance_shader);
     rhi_shader_destroy(prefilter_shader);
+    rhi_shader_destroy(brdf_shader);
     rhi_texture_destroy(equirect);
     ibl_destroy(ibl);
     return false;
@@ -220,6 +257,7 @@ void ibl_destroy(ibl_environment* ibl)
     rhi_texture_destroy(ibl->environment);
     rhi_texture_destroy(ibl->irradiance);
     rhi_texture_destroy(ibl->prefiltered);
+    rhi_framebuffer_destroy(ibl->brdf_lut_target);   // also frees brdf_lut
     rhi_shader_destroy(ibl->skybox_shader);
     rhi_buffer_destroy(ibl->cube_vertices);
     rhi_buffer_destroy(ibl->cube_indices);
@@ -235,8 +273,9 @@ void ibl_bind(const ibl_environment* ibl, rhi_shader pbr_shader)
     // make every draw fail with GL_INVALID_OPERATION.
     rhi_shader_set_int(pbr_shader, "u_irradiance_map", IBL_SLOT_IRRADIANCE);
     rhi_shader_set_int(pbr_shader, "u_prefiltered_map", IBL_SLOT_PREFILTERED);
+    rhi_shader_set_int(pbr_shader, "u_brdf_lut", IBL_SLOT_BRDF_LUT);
 
-    if (!ibl || !ibl->irradiance || !ibl->prefiltered)
+    if (!ibl || !ibl->irradiance || !ibl->prefiltered || !ibl->brdf_lut)
     {
         rhi_shader_set_int(pbr_shader, "u_use_ibl", 0);
         return;
@@ -244,6 +283,7 @@ void ibl_bind(const ibl_environment* ibl, rhi_shader pbr_shader)
 
     rhi_texture_bind(ibl->irradiance, IBL_SLOT_IRRADIANCE);
     rhi_texture_bind(ibl->prefiltered, IBL_SLOT_PREFILTERED);
+    rhi_texture_bind(ibl->brdf_lut, IBL_SLOT_BRDF_LUT);
 
     rhi_shader_set_float(pbr_shader, "u_prefiltered_max_lod", (f32)(ibl->prefiltered_mip_count - 1));
     rhi_shader_set_int(pbr_shader, "u_use_ibl", 1);
